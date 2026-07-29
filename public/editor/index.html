@@ -156,6 +156,15 @@
   </select>
   <button class="btn" id="shakebtn" title="micro-shake as each word lands">∿ shake</button>
   <button class="btn" id="glowbtn" title="glow halo on every caption word">✺ glow</button>
+  <select id="sizesel" title="caption size">
+    <option value="m">caption M</option>
+    <option value="s">caption S</option>
+    <option value="l">caption L</option>
+  </select>
+  <select id="possel" title="caption position">
+    <option value="low">low captions</option>
+    <option value="mid">centered captions</option>
+  </select>
   <select id="looksel" title="cinematic look — burned in on export">
     <option value="none">no look</option>
     <option value="warm">✦ warm key</option>
@@ -229,6 +238,13 @@
   const S={ clips:[], sel:-1, playing:false, playIdx:0, raf:0, rendering:false };
   const screen=$('screen');
 
+  /* Chrome/Firefox record WebM; Safari only does MP4 — pick what works here */
+  const REC_MIMES=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm',
+                   'video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4'];
+  const pickMime=()=>(window.MediaRecorder&&REC_MIMES.find(m=>MediaRecorder.isTypeSupported(m)))||'';
+  const mimeExt=m=>((m||'').includes('mp4')?'mp4':'webm');
+  const canRecord=!!(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream&&pickMime());
+
   /* ── import ── */
   $('addbtn').onclick=()=>$('file').click();
   $('empty').onclick=()=>$('file').click();
@@ -257,17 +273,26 @@
     setState(S.clips.length+' clip'+(S.clips.length>1?'s':'')+' · total '+fmt(totalDur()));
   }
   async function thumb(clip){
+    const c=clip._thumb; if(!c) return;
+    c.width=200;c.height=64;
+    const key=clip.in.toFixed(2);
+    if(clip._png&&clip._pngKey===key){          // cached — skip the video reload
+      const im=new Image();
+      im.onload=()=>{ c.getContext('2d').drawImage(im,0,0); };
+      im.src=clip._png;
+      return;
+    }
     const v=document.createElement('video');
     v.src=clip.url; v.muted=true; v.playsInline=true;
     await new Promise(res=>{ v.onloadedmetadata=res; });
     v.currentTime=Math.min(clip.in+0.4, clip.dur*0.3);
     await new Promise(res=>{ v.onseeked=res; setTimeout(res,1200); });
-    const c=clip._thumb; if(!c) return;
-    c.width=200;c.height=64;
+    if(clip._thumb!==c) return;
     const g=c.getContext('2d');
     const r=Math.max(200/v.videoWidth, 64/v.videoHeight);
     const w=v.videoWidth*r, h=v.videoHeight*r;
     g.drawImage(v,(200-w)/2,(64-h)/2,w,h);
+    try{ clip._png=c.toDataURL('image/jpeg',0.7); clip._pngKey=key; }catch(_){}
   }
 
   /* ── the rail ── */
@@ -374,6 +399,7 @@
   $('exportbtn').onclick=exportCut;
   async function exportCut(){
     if(S.rendering||!S.clips.length) return;
+    if(!canRecord){ setState('this browser can’t render video — use Chrome, Edge, Firefox or Safari 14.1+'); return; }
     S.rendering=true; stopPlay();
     document.body.classList.add('render');
 
@@ -387,10 +413,11 @@
     const g=cv.getContext('2d');
 
     const AC=new (window.AudioContext||window.webkitAudioContext)();
+    try{ await AC.resume(); }catch(_){}
     const dest=AC.createMediaStreamDestination();
     const out=cv.captureStream(30);
     dest.stream.getAudioTracks().forEach(t=>out.addTrack(t));
-    const mime=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    const mime=pickMime();
     const rec=new MediaRecorder(out, mime?{mimeType:mime}:{});
     const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
     const done=new Promise(res=>{ rec.onstop=res; });
@@ -411,7 +438,8 @@
       } else node.connect(dest);              // audio → the recording, not speakers
       v.currentTime=c.in;
       await new Promise(res=>{ v.onseeked=res; setTimeout(res,800); });
-      await v.play();
+      try{ await v.play(); }
+      catch(_){ v.muted=true; await v.play().catch(()=>{}); }  // Safari autoplay guard
       const idx=S.clips.indexOf(c);
       const zoom=(punch && idx%2===1)?1.07:1.0;   // every other cut punches in
       const cover=aspect!=='orig';
@@ -441,7 +469,7 @@
     const blob=new Blob(chunks,{type:rec.mimeType||'video/webm'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download='clipfarm-'+Date.now()+'.webm';
+    a.download='clipfarm-'+Date.now()+'.'+mimeExt(rec.mimeType);
     a.click();
     setState('exported — check your downloads');
   }
@@ -676,6 +704,11 @@
   let capTheme=localStorage.getItem('cf-cap')||'gold';
   let capShake=localStorage.getItem('cf-shake')!=='0';
   let capGlow=localStorage.getItem('cf-glow')!=='0';
+  let capSize=localStorage.getItem('cf-size')||'m';
+  let capPos=localStorage.getItem('cf-pos')||'low';
+  const CAP_PX={ s:0.058, m:0.075, l:0.095 };        // font size as fraction of frame width
+  const CAP_Y ={ low:0.82, mid:0.52 };               // baseline as fraction of frame height
+  const CAP_CSS_SIZE={ s:'clamp(17px,3.5vw,42px)', m:'clamp(22px,4.5vw,54px)', l:'clamp(27px,5.7vw,68px)' };
   $('capsel').value=capTheme;
   $('capsel').onchange=e=>{ capTheme=e.target.value; localStorage.setItem('cf-cap',capTheme); };
   const syncCapBtns=()=>{ $('shakebtn').classList.toggle('on',capShake);
@@ -683,6 +716,17 @@
   $('shakebtn').onclick=()=>{ capShake=!capShake; localStorage.setItem('cf-shake',capShake?'1':'0'); syncCapBtns(); };
   $('glowbtn').onclick=()=>{ capGlow=!capGlow; localStorage.setItem('cf-glow',capGlow?'1':'0'); syncCapBtns(); };
   syncCapBtns();
+  const syncCapLayout=()=>{
+    const cap=$('capfx');
+    cap.style.fontSize=CAP_CSS_SIZE[capSize];
+    cap.style.bottom=capPos==='mid'?'auto':'9%';
+    cap.style.top=capPos==='mid'?'44%':'auto';
+  };
+  $('sizesel').value=capSize;
+  $('sizesel').onchange=e=>{ capSize=e.target.value; localStorage.setItem('cf-size',capSize); syncCapLayout(); };
+  $('possel').value=capPos;
+  $('possel').onchange=e=>{ capPos=e.target.value; localStorage.setItem('cf-pos',capPos); syncCapLayout(); };
+  syncCapLayout();
 
   function capColor(idx){
     if(capTheme==='aurora'){ const c=AURORA[Math.floor(idx/5)%AURORA.length];
@@ -692,35 +736,57 @@
   const isEmph=w=>/[.!?]$/.test(w)||w.replace(/[^a-zA-Z0-9]/g,'').length>=8;
   const glowCss=c=>`0 0 14px ${c}88, 0 0 42px ${c}55, 0 0 90px ${c}2e`;
 
-  function paintWord(g,W,H,word,alpha,age=1,idx=0){
-    if(!word||alpha<=0||capTheme==='off') return;
+  /* Each glowing word is rendered ONCE to an offscreen sprite (the layered
+     shadowBlur passes are expensive), then every frame just blits the sprite
+     with entrance-scale, alpha and shake applied — keeps export at frame rate
+     even at 1080×1920. Cache is keyed on everything that changes the pixels. */
+  const wordSprites=new Map();
+  function wordSprite(W,word,idx){
     const c=capColor(idx), emph=isEmph(word);
-    const k=Math.min(Math.max(age/0.12,0),1);       // 120ms entrance
-    const scale=(0.92+0.08*k)*(emph?1.12:1);
-    const aIn=0.15+0.85*k;
-    let dx=0;
-    if(capShake&&k<1){                              // x keyframes [2,-2,1,0]
-      const ph=[2,-2,1,0], f=k*3, i0=Math.min(2,Math.floor(f));
-      dx=(ph[i0]+(ph[i0+1]-ph[i0])*(f-i0))*(W/720);
-    }
-    const px=Math.round(W*0.075*scale);
-    g.save();
+    const key=word+'|'+c.text+'|'+(emph?1:0)+'|'+W+'|'+(capGlow?1:0)+'|'+capSize;
+    let s=wordSprites.get(key);
+    if(s) return s;
+    const px=Math.round(W*CAP_PX[capSize]*(emph?1.12:1));
+    const cv=document.createElement('canvas');
+    const g=cv.getContext('2d');
+    g.font='800 '+px+'px Inter,-apple-system,sans-serif';
+    const tw=Math.ceil(g.measureText(word).width);
+    const pad=Math.ceil(px*(capGlow?2:0.3));      // room for the 90px-scale halo
+    cv.width=tw+pad*2; cv.height=px+pad*2;
     g.font='800 '+px+'px Inter,-apple-system,sans-serif';
     g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
-    g.globalAlpha=alpha*aIn;
-    const x=W/2+dx, y=H*0.82;
+    const x=cv.width/2, y=cv.height/2;
     const fill=emph?'#ffffff':c.text;
     g.strokeStyle='rgba(0,0,0,.85)'; g.lineWidth=px*.12;   // readability first
     g.strokeText(word,x,y);
-    if(capGlow){                                    // layered halo = the glow formula
-      const layers=[[px*0.28,'88'],[px*0.85,'55'],[px*1.8,'2e']];
-      for(const [blur,aa] of layers){
+    if(capGlow){                                  // layered halo = the glow formula
+      for(const [blur,aa] of [[px*0.28,'88'],[px*0.85,'55'],[px*1.8,'2e']]){
         g.shadowColor=c.glow+aa; g.shadowBlur=blur;
         g.fillStyle=fill; g.fillText(word,x,y);
       }
       g.shadowColor='transparent'; g.shadowBlur=0;
     }
     g.fillStyle=fill; g.fillText(word,x,y);
+    s={cv};
+    wordSprites.set(key,s);
+    if(wordSprites.size>120) wordSprites.delete(wordSprites.keys().next().value);
+    return s;
+  }
+  function paintWord(g,W,H,word,alpha,age=1,idx=0){
+    if(!word||alpha<=0||capTheme==='off') return;
+    const k=Math.min(Math.max(age/0.12,0),1);       // 120ms entrance
+    const scale=0.92+0.08*k;
+    const aIn=0.15+0.85*k;
+    let dx=0;
+    if(capShake&&k<1){                              // x keyframes [2,-2,1,0]
+      const ph=[2,-2,1,0], f=k*3, i0=Math.min(2,Math.floor(f));
+      dx=(ph[i0]+(ph[i0+1]-ph[i0])*(f-i0))*(W/720);
+    }
+    const s=wordSprite(W,word,idx);
+    const w=s.cv.width*scale, h=s.cv.height*scale;
+    g.save();
+    g.globalAlpha=Math.min(1,alpha*aIn);
+    g.drawImage(s.cv, W/2-w/2+dx, H*CAP_Y[capPos]-h/2, w, h);
     g.restore();
   }
   const WORD_LIFE=1.4, WORD_FADE=0.35, SYNC=0.35;
@@ -789,8 +855,9 @@
 
   function recStart(){
     if(!R.cam||R.busy) return;
+    if(!canRecord){ $('recmsg').textContent='this browser can’t record — use Chrome, Edge, Firefox or Safari 14.1+'; return; }
     R.events=[]; R.t0=performance.now(); R.chunks=[];
-    const mime=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    const mime=pickMime();
     R.raw=new MediaRecorder(R.cam, mime?{mimeType:mime}:{});
     R.raw.ondataavailable=e=>{ if(e.data.size) R.chunks.push(e.data); };
     R.raw.onstop=burnAndImport;
@@ -821,12 +888,25 @@
     const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
     const g=cv.getContext('2d');
     const out=cv.captureStream(30);
-    const cs=clip.captureStream?clip.captureStream():clip.mozCaptureStream();
-    cs.getAudioTracks().forEach(t=>out.addTrack(t));
-    const mime=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    let AC2=null;
+    try{
+      if(clip.captureStream||clip.mozCaptureStream){
+        const cs=(clip.captureStream||clip.mozCaptureStream).call(clip);
+        cs.getAudioTracks().forEach(t=>out.addTrack(t));
+      }else{                       // Safari has no element captureStream — route via WebAudio
+        AC2=new (window.AudioContext||window.webkitAudioContext)();
+        await AC2.resume();
+        const dest2=AC2.createMediaStreamDestination();
+        AC2.createMediaElementSource(clip).connect(dest2);
+        dest2.stream.getAudioTracks().forEach(t=>out.addTrack(t));
+        clip.volume=1;
+      }
+    }catch(_){}
+    const mime=pickMime();
     const rec=new MediaRecorder(out, mime?{mimeType:mime}:{});
     const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
-    rec.onstop=()=>finishImport(new Blob(chunks,{type:rec.mimeType||'video/webm'}));
+    rec.onstop=()=>{ if(AC2){ try{AC2.close();}catch(_){}}
+      finishImport(new Blob(chunks,{type:rec.mimeType||'video/webm'})); };
     const timed=R.events.map(e=>({t:Math.max(0,e.t-SYNC),word:e.word}));
     function frame(){
       if(clip.ended||clip.currentTime>=dur){ try{rec.stop();}catch(_){} return; }
@@ -841,11 +921,15 @@
       $('recmsg').textContent='syncing… '+fmt(now)+' / '+fmt(dur);
       requestAnimationFrame(frame);
     }
-    rec.start(); await clip.play(); requestAnimationFrame(frame);
+    rec.start();
+    try{ await clip.play(); }
+    catch(_){ clip.muted=true; await clip.play().catch(()=>{}); }  // Safari autoplay guard
+    requestAnimationFrame(frame);
   }
   async function finishImport(blob){
     R.busy=false;
-    const f=new File([blob],'take-'+new Date().toTimeString().slice(0,8).replace(/:/g,'')+'.webm',
+    const f=new File([blob],
+      'take-'+new Date().toTimeString().slice(0,8).replace(/:/g,'')+'.'+mimeExt(blob.type),
       {type:blob.type||'video/webm'});
     closeRec();
     await addClip(f);
