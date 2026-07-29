@@ -1,4 +1,13 @@
-export type ThemeKey = "gold" | "neon" | "violet" | "ember" | "aurora";
+export type ThemeKey =
+  | "gold"
+  | "neon"
+  | "violet"
+  | "ember"
+  | "inferno"
+  | "mint"
+  | "sky"
+  | "rose"
+  | "aurora";
 
 export interface CaptionTheme {
   key: ThemeKey;
@@ -18,6 +27,10 @@ export const CAPTION_THEMES: Record<Exclude<ThemeKey, "aurora">, CaptionTheme> =
   neon: { key: "neon", label: "Neon", text: "#67e8f9", glow: "#22d3ee" },
   violet: { key: "violet", label: "Violet", text: "#c4b5fd", glow: "#8b5cf6" },
   ember: { key: "ember", label: "Ember", text: "#fdba74", glow: "#f97316" },
+  inferno: { key: "inferno", label: "Inferno", text: "#fca5a5", glow: "#ef4444" },
+  mint: { key: "mint", label: "Mint", text: "#6ee7b7", glow: "#10b981" },
+  sky: { key: "sky", label: "Sky", text: "#93c5fd", glow: "#3b82f6" },
+  rose: { key: "rose", label: "Rose", text: "#f9a8d4", glow: "#ec4899" },
 };
 
 /** Aurora drift sequence — advances every ~5 words */
@@ -36,6 +49,10 @@ export const THEME_ORDER: ThemeKey[] = [
   "neon",
   "violet",
   "ember",
+  "inferno",
+  "mint",
+  "sky",
+  "rose",
   "aurora",
 ];
 

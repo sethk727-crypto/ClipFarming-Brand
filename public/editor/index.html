@@ -151,8 +151,19 @@
     <option value="neon">neon captions</option>
     <option value="violet">violet captions</option>
     <option value="ember">ember captions</option>
+    <option value="inferno">inferno captions</option>
+    <option value="mint">mint captions</option>
+    <option value="sky">sky captions</option>
+    <option value="rose">rose captions</option>
+    <option value="brand">brand gradient</option>
     <option value="aurora">aurora drift</option>
     <option value="off">no captions</option>
+  </select>
+  <select id="stylesel" title="caption animation style">
+    <option value="pop">pop word</option>
+    <option value="karaoke">phrase highlight</option>
+    <option value="bounce">bounce in</option>
+    <option value="type">typewriter</option>
   </select>
   <button class="btn" id="shakebtn" title="micro-shake as each word lands">∿ shake</button>
   <button class="btn" id="glowbtn" title="glow halo on every caption word">✺ glow</button>
@@ -584,18 +595,47 @@
       windows.push({ s:Math.max(c.in,s-0.2), e:Math.min(c.out,e+0.35) });
       i=j+1;
     }
-    const scored=windows.map(w=>{
+
+    /* Split anything longer than ~42s at its quietest interior pause, so one
+       continuous rant becomes several posts instead of a single 60s slab. */
+    const MAXSEG=42, MINSEG=12, CUT_LO=16, CUT_HI=36;
+    const smooth=i=>{ let s=0,n=0;
+      for(let k=Math.max(0,i-6);k<Math.min(m.n,i+6);k++){ s+=m.loud[k]; n++; }
+      return s/Math.max(1,n); };
+    const pieces=[];
+    for(const w of windows){
+      let s=w.s;
+      while(w.e-s>MAXSEG){
+        let bi=-1, bv=Infinity;
+        const i0=Math.floor((s+CUT_LO)/m.step);
+        const i1=Math.min(m.n,Math.floor(Math.min(s+CUT_HI,w.e-MINSEG)/m.step));
+        for(let k=i0;k<i1;k++){ const v=smooth(k); if(v<bv){ bv=v; bi=k; } }
+        if(bi<0) break;
+        const cut=bi*m.step;
+        if(cut-s<MINSEG) break;
+        pieces.push({ s, e:cut }); s=cut;
+      }
+      pieces.push({ s, e:w.e });
+    }
+
+    /* Hook score: speech density (how relentlessly they talk), energy above
+       the clip's own loudness bar, and a bonus when the first 3 seconds slap
+       harder than the rest — that's the scroll-stopper. */
+    const scored=pieces.map(w=>{
       const a0=Math.floor(w.s/m.step), a1=Math.min(m.n,Math.floor(w.e/m.step));
       let hot=0, sum=0;
       for(let k=a0;k<a1;k++){ sum+=m.loud[k]; if(m.loud[k]>=m.bar) hot++; }
-      const dur=w.e-w.s;
-      const density=hot/Math.max(1,a1-a0);
-      const energy=Math.min(1, sum/Math.max(1,a1-a0)/(m.bar*5));
-      let score=Math.round(density*70+energy*30);
+      const dur=w.e-w.s, N=Math.max(1,a1-a0);
+      const density=hot/N;
+      const energy=Math.min(1, sum/N/(m.bar*5));
+      const h1=Math.min(m.n,Math.floor((w.s+3)/m.step));
+      let hsum=0; for(let k=a0;k<h1;k++) hsum+=m.loud[k];
+      const hook=Math.min(1,(hsum/Math.max(1,h1-a0))/((sum/N)+1e-6));
+      let score=Math.round(density*60+energy*25+hook*15);
       if(dur<MINL) score=Math.round(score*dur/MINL);   // too short gets dinged
       return { ...w, dur, score:Math.min(99,score) };
     }).filter(w=>w.dur>=6)
-      .sort((a,b)=>b.score-a.score).slice(0,6)
+      .sort((a,b)=>b.score-a.score).slice(0,8)
       .sort((a,b)=>a.s-b.s);
     if(!scored.length){
       setState('nothing long enough for a short — try auto-cut silence instead');
@@ -695,10 +735,14 @@
      word lands, and emphasized words (long ones, sentence-enders) rendered
      ~12% larger in pure white. Preview mirrors it; export burns it in. */
   const CAPT={
-    gold:  {text:'#fde047', glow:'#facc15'},
-    neon:  {text:'#67e8f9', glow:'#22d3ee'},
-    violet:{text:'#c4b5fd', glow:'#8b5cf6'},
-    ember: {text:'#fdba74', glow:'#f97316'},
+    gold:   {text:'#fde047', glow:'#facc15'},
+    neon:   {text:'#67e8f9', glow:'#22d3ee'},
+    violet: {text:'#c4b5fd', glow:'#8b5cf6'},
+    ember:  {text:'#fdba74', glow:'#f97316'},
+    inferno:{text:'#fca5a5', glow:'#ef4444'},
+    mint:   {text:'#6ee7b7', glow:'#10b981'},
+    sky:    {text:'#93c5fd', glow:'#3b82f6'},
+    rose:   {text:'#f9a8d4', glow:'#ec4899'},
   };
   const AURORA=['#fde047','#6ee7b7','#67e8f9','#93c5fd','#c4b5fd','#f9a8d4','#fdba74'];
   let capTheme=localStorage.getItem('cf-cap')||'gold';
@@ -706,6 +750,7 @@
   let capGlow=localStorage.getItem('cf-glow')!=='0';
   let capSize=localStorage.getItem('cf-size')||'m';
   let capPos=localStorage.getItem('cf-pos')||'low';
+  let capStyle=localStorage.getItem('cf-anim')||'pop';
   const CAP_PX={ s:0.058, m:0.075, l:0.095 };        // font size as fraction of frame width
   const CAP_Y ={ low:0.82, mid:0.52 };               // baseline as fraction of frame height
   const CAP_CSS_SIZE={ s:'clamp(17px,3.5vw,42px)', m:'clamp(22px,4.5vw,54px)', l:'clamp(27px,5.7vw,68px)' };
@@ -726,13 +771,18 @@
   $('sizesel').onchange=e=>{ capSize=e.target.value; localStorage.setItem('cf-size',capSize); syncCapLayout(); };
   $('possel').value=capPos;
   $('possel').onchange=e=>{ capPos=e.target.value; localStorage.setItem('cf-pos',capPos); syncCapLayout(); };
+  $('stylesel').value=capStyle;
+  $('stylesel').onchange=e=>{ capStyle=e.target.value; localStorage.setItem('cf-anim',capStyle); };
   syncCapLayout();
 
   function capColor(idx){
     if(capTheme==='aurora'){ const c=AURORA[Math.floor(idx/5)%AURORA.length];
       return {text:c, glow:c}; }
+    if(capTheme==='brand') return {text:'#FF8A65', glow:'#FF8A65', brand:true};
     return CAPT[capTheme]||CAPT.gold;
   }
+  const easeOutBack=k=>{ const c1=1.70158, c3=c1+1;
+    return 1+c3*Math.pow(k-1,3)+c1*Math.pow(k-1,2); };
   const isEmph=w=>/[.!?]$/.test(w)||w.replace(/[^a-zA-Z0-9]/g,'').length>=8;
   const glowCss=c=>`0 0 14px ${c}88, 0 0 42px ${c}55, 0 0 90px ${c}2e`;
 
@@ -741,12 +791,12 @@
      with entrance-scale, alpha and shake applied — keeps export at frame rate
      even at 1080×1920. Cache is keyed on everything that changes the pixels. */
   const wordSprites=new Map();
-  function wordSprite(W,word,idx){
-    const c=capColor(idx), emph=isEmph(word);
-    const key=word+'|'+c.text+'|'+(emph?1:0)+'|'+W+'|'+(capGlow?1:0)+'|'+capSize;
+  function wordSprite(W,word,idx,white){
+    const c=capColor(idx);
+    const key=word+'|'+(white?'w':c.text)+'|'+W+'|'+(capGlow?1:0)+'|'+capSize+'|'+(c.brand?'b':'');
     let s=wordSprites.get(key);
     if(s) return s;
-    const px=Math.round(W*CAP_PX[capSize]*(emph?1.12:1));
+    const px=Math.round(W*CAP_PX[capSize]*(white?1.12:1));
     const cv=document.createElement('canvas');
     const g=cv.getContext('2d');
     g.font='800 '+px+'px Inter,-apple-system,sans-serif';
@@ -756,7 +806,13 @@
     g.font='800 '+px+'px Inter,-apple-system,sans-serif';
     g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
     const x=cv.width/2, y=cv.height/2;
-    const fill=emph?'#ffffff':c.text;
+    let fill;
+    if(white) fill='#ffffff';
+    else if(c.brand){                             // gradient runs across the word
+      const gr=g.createLinearGradient(x-tw/2,0,x+tw/2,0);
+      gr.addColorStop(0,'#FFC857'); gr.addColorStop(.5,'#FF8A65'); gr.addColorStop(1,'#7B2CBF');
+      fill=gr;
+    } else fill=c.text;
     g.strokeStyle='rgba(0,0,0,.85)'; g.lineWidth=px*.12;   // readability first
     g.strokeText(word,x,y);
     if(capGlow){                                  // layered halo = the glow formula
@@ -767,26 +823,78 @@
       g.shadowColor='transparent'; g.shadowBlur=0;
     }
     g.fillStyle=fill; g.fillText(word,x,y);
-    s={cv};
+    s={cv,pad,tw,px};
     wordSprites.set(key,s);
-    if(wordSprites.size>120) wordSprites.delete(wordSprites.keys().next().value);
+    if(wordSprites.size>160) wordSprites.delete(wordSprites.keys().next().value);
     return s;
   }
+  const shakeDx=(k,W)=>{                          // x keyframes [2,-2,1,0] over 120ms
+    if(!capShake||k>=1) return 0;
+    const ph=[2,-2,1,0], f=k*3, i0=Math.min(2,Math.floor(f));
+    return (ph[i0]+(ph[i0+1]-ph[i0])*(f-i0))*(W/720);
+  };
   function paintWord(g,W,H,word,alpha,age=1,idx=0){
     if(!word||alpha<=0||capTheme==='off') return;
-    const k=Math.min(Math.max(age/0.12,0),1);       // 120ms entrance
-    const scale=0.92+0.08*k;
-    const aIn=0.15+0.85*k;
-    let dx=0;
-    if(capShake&&k<1){                              // x keyframes [2,-2,1,0]
-      const ph=[2,-2,1,0], f=k*3, i0=Math.min(2,Math.floor(f));
-      dx=(ph[i0]+(ph[i0+1]-ph[i0])*(f-i0))*(W/720);
+    const style=capStyle==='karaoke'?'pop':capStyle; // karaoke needs word timings
+    const s=wordSprite(W,word,idx,isEmph(word));
+    const k=Math.min(Math.max(age/0.12,0),1);
+    let scale=0.92+0.08*k, aIn=0.15+0.85*k, dx=shakeDx(k,W), dy=0, wipe=1;
+    if(style==='bounce'){                          // springs up from below
+      const e=easeOutBack(Math.min(age/0.28,1));
+      scale=0.7+0.3*e; dy=(1-e)*H*0.10; aIn=Math.min(1,age/0.09); dx=0;
+    }else if(style==='type'){                      // left-to-right reveal + caret
+      wipe=Math.min(age/0.3,1); scale=1; aIn=1; dx=0;
     }
-    const s=wordSprite(W,word,idx);
     const w=s.cv.width*scale, h=s.cv.height*scale;
+    const x=W/2-w/2+dx, y=H*CAP_Y[capPos]-h/2+dy;
     g.save();
     g.globalAlpha=Math.min(1,alpha*aIn);
-    g.drawImage(s.cv, W/2-w/2+dx, H*CAP_Y[capPos]-h/2, w, h);
+    if(wipe<1){
+      const sw=Math.max(1,Math.round(s.pad+s.tw*wipe));
+      g.drawImage(s.cv,0,0,sw,s.cv.height, x,y, sw*scale,h);
+      const col=capColor(idx);
+      g.fillStyle=col.brand?'#FF8A65':col.text;    // typing caret
+      g.fillRect(x+sw*scale+2, y+h*0.3, Math.max(2,W*0.004), h*0.4);
+    } else g.drawImage(s.cv,x,y,w,h);
+    g.restore();
+  }
+
+  /* Karaoke: the whole phrase sits on screen, the word being said lights up
+     white. Phrases = runs of up to 4 words broken at pauses >0.7s or
+     punctuation, computed once per clip and cached. */
+  function phrasesFor(c){
+    if(c._phr&&c._phrWords===c.words) return c._phr;
+    const phr=[]; let cur=null;
+    c.words.forEach((w,i)=>{
+      const prev=cur&&c.words[cur.idx[cur.idx.length-1]];
+      if(!cur||cur.idx.length>=4||(prev&&w.t-prev.end>0.7)||(prev&&/[.!?,]$/.test(prev.word))){
+        cur={t:w.t,end:w.end,idx:[i]}; phr.push(cur);
+      }else{ cur.idx.push(i); cur.end=w.end; }
+    });
+    c._phr=phr; c._phrWords=c.words;
+    return phr;
+  }
+  function paintKaraoke(g,W,H,c,t){
+    const phr=phrasesFor(c).find(p=>p.t<=t&&t<p.end+0.6);
+    if(!phr) return;
+    let hi=-1;
+    phr.idx.forEach(i=>{ if(c.words[i].t<=t) hi=i; });
+    const entr=Math.min(Math.max((t-phr.t)/0.12,0),1);
+    const sprites=phr.idx.map(i=>wordSprite(W,c.words[i].word,i,i===hi));
+    const gap=W*0.014;
+    const total=sprites.reduce((a,s)=>a+s.tw,0)+gap*(sprites.length-1);
+    const f=Math.min(1,(W*0.86)/total)*(0.95+0.05*entr);
+    let x=W/2-(total*f)/2;
+    const y=H*CAP_Y[capPos];
+    g.save();
+    sprites.forEach((s,si)=>{
+      const i=phr.idx[si], on=i===hi;
+      const dx=on?shakeDx(Math.min((t-c.words[i].t)/0.12,1),W):0;
+      const w=s.cv.width*f, h=s.cv.height*f;
+      g.globalAlpha=(0.15+0.85*entr)*(on?1:0.8);
+      g.drawImage(s.cv, x+(s.tw*f)/2-w/2+dx, y-h/2, w, h);
+      x+=s.tw*f+gap*f;
+    });
     g.restore();
   }
   const WORD_LIFE=1.4, WORD_FADE=0.35, SYNC=0.35;
@@ -997,9 +1105,10 @@
     $('wordsbtn').classList.remove('busy'); $('wordsbtn').textContent='𝑡 add words';
   };
 
-  /* draw a clip's transcribed word — export pass */
+  /* draw a clip's transcribed caption — export pass */
   function burnClipWords(g,W,H,c,t){
-    if(!c.words) return;
+    if(!c.words||capTheme==='off') return;
+    if(capStyle==='karaoke'){ paintKaraoke(g,W,H,c,t); return; }
     let cur=null, ci=0;
     c.words.forEach((w,i)=>{ if(w.t<=t&&t<Math.min(w.end+0.9,w.t+1.4)){ cur=w; ci=i; } });
     if(!cur) return;
@@ -1008,21 +1117,55 @@
     paintWord(g,W,H,cur.word,a,age,ci);
   }
 
-  /* live kinetic caption over the preview player, so you see words before export */
+  /* live kinetic caption over the preview player, mirroring what export burns in */
+  const esc=t=>t.replace(/[&<>]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));
+  const spanFor=(word,i,on,dim)=>{
+    const col=capColor(i);
+    const color=on?'#ffffff':(col.brand?'transparent':col.text);
+    const glow=capGlow?glowCss(col.glow):'0 0 4px #000, 0 2px 10px rgba(0,0,0,.9)';
+    const grad=(col.brand&&!on)
+      ?'background:linear-gradient(90deg,#FFC857,#FF8A65,#7B2CBF);-webkit-background-clip:text;background-clip:text;'
+      :'';
+    return '<span style="color:'+color+';text-shadow:'+glow+';'+grad
+      +(dim?'opacity:.82;':'')+'padding:0 .12em;display:inline-block;">'+esc(word)+'</span>';
+  };
   setInterval(()=>{
     const c=S.clips[S.sel], cap=$('capfx');
-    if(!c||!c.words||capTheme==='off'){ cap.textContent=''; return; }
+    if(!c||!c.words||capTheme==='off'){ cap.textContent=''; cap.dataset.sig=''; return; }
     const t=screen.currentTime;
+    if(capStyle==='karaoke'){
+      const phr=phrasesFor(c).find(p=>p.t<=t&&t<p.end+0.6);
+      if(!phr){ cap.textContent=''; cap.dataset.sig=''; return; }
+      let hi=-1; phr.idx.forEach(i=>{ if(c.words[i].t<=t) hi=i; });
+      const sig='k'+phr.idx[0]+'.'+hi+'.'+capTheme+'.'+capGlow;
+      if(cap.dataset.sig!==sig){                    // rebuild only on change
+        cap.dataset.sig=sig;
+        cap.style.opacity='1'; cap.style.transform='scale(1)';
+        cap.innerHTML=phr.idx.map(i=>spanFor(c.words[i].word,i,i===hi,i!==hi)).join('');
+      }
+      return;
+    }
     let cur=null, ci=0;
     c.words.forEach((w,i)=>{ if(w.t<=t&&t<Math.min(w.end+0.9,w.t+1.4)){ cur=w; ci=i; } });
-    if(!cur){ cap.textContent=''; return; }
-    const col=capColor(ci), emph=isEmph(cur.word);
+    if(!cur){ cap.textContent=''; cap.dataset.sig=''; return; }
     const age=t-cur.t, k=Math.min(Math.max(age/0.12,0),1);
-    cap.textContent=cur.word;
-    cap.style.color=emph?'#ffffff':col.text;
-    cap.style.textShadow=capGlow?glowCss(col.glow):'0 0 4px #000, 0 2px 10px rgba(0,0,0,.9)';
-    cap.style.opacity=String(0.15+0.85*k);
-    cap.style.transform='scale('+((0.92+0.08*k)*(emph?1.08:1)).toFixed(3)+')';
+    let shown=cur.word, op=0.15+0.85*k, tf='scale('+(0.92+0.08*k).toFixed(3)+')';
+    if(capStyle==='bounce'){
+      const e=easeOutBack(Math.min(age/0.28,1));
+      op=Math.min(1,age/0.09);
+      tf='translateY('+((1-e)*34).toFixed(1)+'px) scale('+(0.7+0.3*e).toFixed(3)+')';
+    }else if(capStyle==='type'){
+      const p=Math.min(age/0.3,1);
+      shown=cur.word.slice(0,Math.max(1,Math.ceil(cur.word.length*p)))+(p<1?'▎':'');
+      op=1; tf='none';
+    }
+    const sig='w'+ci+'.'+shown+'.'+capTheme+'.'+capGlow+'.'+capStyle;
+    if(cap.dataset.sig!==sig){
+      cap.dataset.sig=sig;
+      cap.innerHTML=spanFor(shown,ci,isEmph(cur.word),false);
+    }
+    cap.style.opacity=String(op);
+    cap.style.transform=tf;
   },80);
 
   /* ── TRANSCRIPT EDITING: the video obeys the text ──
