@@ -109,7 +109,16 @@
     letter-spacing:-.02em;will-change:transform;
     transition:color .3s ease,text-shadow .3s ease;
     text-shadow:0 0 14px #facc1588,0 0 42px #facc1555,0 0 90px #facc152e;}
-  #autocut.busy,#wordsbtn.busy,#shortsbtn.busy{color:var(--emberhov);border-color:var(--emberhov);pointer-events:none;}
+  #autocut.busy,#wordsbtn.busy,#shortsbtn.busy,#autoeditbtn.busy{color:var(--emberhov);border-color:var(--emberhov);pointer-events:none;}
+  .clip.multi{border-color:var(--emberhov);}
+  .clip.dragover{border-color:#FFC857;}
+  .clip{cursor:grab;}
+  #stage.dropzone{outline:2px dashed var(--ember);outline-offset:-3px;}
+  #musicwrap{display:flex;align-items:center;gap:8px;}
+  #musicvol{width:90px;accent-color:var(--ember);display:none;}
+  #lastexp{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums;}
+  #lastexp a{color:var(--emberhov);text-decoration:none;}
+  #lastexp a:hover{text-decoration:underline;}
   /* transcript editor */
   #script{display:none;margin:0 22px 8px;background:var(--panel);border:1px solid var(--edge);
     border-radius:10px;padding:10px 14px;}
@@ -191,6 +200,7 @@
   </select>
   <button class="btn" id="punchbtn" title="alternate a subtle zoom on every cut — jump-cut energy">⤢ punch-in</button>
   <button class="btn" id="evenbtn" title="level every clip's loudness on export">≈ even audio</button>
+  <button class="btn" id="autoeditbtn" title="remove silence from every clip at once and tighten every cut into snappy jump cuts">⚡ auto-edit all</button>
   <button class="btn primary" id="exportbtn" disabled>export video</button>
   <div id="state">drop clips in, trim, reorder, export</div>
 </header>
@@ -213,6 +223,12 @@
 <div id="transport">
   <button id="playbtn">▶</button>
   <div id="clock">0:00 / 0:00</div>
+  <div id="musicwrap">
+    <button class="btn" id="musicbtn" title="background music bed — auto-ducks under speech, mixed into the export">♫ add music</button>
+    <input type="range" id="musicvol" min="0" max="100" title="music volume">
+    <button class="btn" id="musicoff" title="remove music" style="display:none">✕</button>
+  </div>
+  <div id="lastexp"></div>
 </div>
 
 <div id="trim">
@@ -221,6 +237,7 @@
     <div id="trimsel"><div class="grab" id="grabin"></div><div class="grab" id="grabout"></div></div>
   </div>
   <div id="trimtimes">0.0s → 0.0s</div>
+  <button class="btn" id="splitbtn" title="split this clip in two at the playhead (S)">⊟ split</button>
   <button class="btn" id="autocut" title="find the talking, drop the silence">✂ auto-cut silence</button>
   <button class="btn" id="shortsbtn" title="find the best 15–60s moments and cut them into shorts, scored by hook potential">⚡ auto-shorts</button>
   <button class="btn" id="wordsbtn" title="AI-transcribe this clip locally in your browser; kinetic words burn in on export">𝑡 add words</button>
@@ -241,12 +258,14 @@
 </div>
 
 <input type="file" id="file" accept="video/*" multiple>
+<input type="file" id="musicfile" accept="audio/*">
 
 <script>
 (() => {
   const $=id=>document.getElementById(id);
   const fmt=s=>{ s=Math.max(0,s); const m=Math.floor(s/60); return m+':'+String(Math.floor(s%60)).padStart(2,'0'); };
-  const S={ clips:[], sel:-1, playing:false, playIdx:0, raf:0, rendering:false };
+  const S={ clips:[], sel:-1, playing:false, playIdx:0, raf:0, rendering:false,
+            selSet:new Set(), dragIdx:null, lastExpUrl:null };
   const screen=$('screen');
 
   /* Chrome/Firefox record WebM; Safari only does MP4 — pick what works here */
@@ -311,7 +330,8 @@
     const box=$('clips'); box.innerHTML='';
     S.clips.forEach((c,i)=>{
       const el=document.createElement('div');
-      el.className='clip'+(i===S.sel?' active':'');
+      el.className='clip'+(i===S.sel?' active':'')+(S.selSet.has(i)?' multi':'');
+      el.draggable=true;
       el.innerHTML=`
         <div class="thumbwrap"><canvas></canvas><div class="dur">${fmt(c.out-c.in)}</div></div>
         <div class="row">
@@ -321,15 +341,25 @@
           <button class="mini del" title="remove">✕</button>
         </div>`;
       c._thumb=el.querySelector('canvas');
-      el.querySelector('.thumbwrap').onclick=()=>select(i);
+      el.ondragstart=e=>{ S.dragIdx=i; e.dataTransfer.effectAllowed='move'; };
+      el.ondragover=e=>{ e.preventDefault(); el.classList.add('dragover'); };
+      el.ondragleave=()=>el.classList.remove('dragover');
+      el.ondrop=e=>{ e.preventDefault(); el.classList.remove('dragover');
+        const from=S.dragIdx; S.dragIdx=null;
+        if(from==null||from===i) return;
+        const [mv]=S.clips.splice(from,1); S.clips.splice(i,0,mv);
+        S.sel=i; S.selSet.clear(); renderRail(); S.clips.forEach(thumb); };
+      el.querySelector('.thumbwrap').onclick=ev=>{
+        if(ev.metaKey||ev.ctrlKey){                  // multi-select for bulk delete
+          S.selSet.has(i)?S.selSet.delete(i):S.selSet.add(i);
+          renderRail(); return;
+        }
+        S.selSet.clear(); select(i);
+      };
       const [left,right,del]=el.querySelectorAll('.mini');
       left.onclick =()=>{ if(i>0){ [S.clips[i-1],S.clips[i]]=[S.clips[i],S.clips[i-1]]; S.sel=i-1; renderRail(); S.clips.forEach(thumb);} };
       right.onclick=()=>{ if(i<S.clips.length-1){ [S.clips[i+1],S.clips[i]]=[S.clips[i],S.clips[i+1]]; S.sel=i+1; renderRail(); S.clips.forEach(thumb);} };
-      del.onclick  =()=>{ URL.revokeObjectURL(c.url); S.clips.splice(i,1);
-        S.sel=Math.min(S.sel,S.clips.length-1); renderRail(); S.clips.forEach(thumb);
-        if(!S.clips.length){ document.body.classList.remove('has','trim');
-          $('exportbtn').disabled=true; screen.src=''; }
-        setState(S.clips.length+' clips · total '+fmt(totalDur())); };
+      del.onclick  =()=>delClips([i]);
       box.appendChild(el);
     });
   }
@@ -381,12 +411,13 @@
   /* ── preview the whole cut ── */
   const totalDur=()=>S.clips.reduce((a,c)=>a+(c.out-c.in),0);
   function stopPlay(){ S.playing=false; cancelAnimationFrame(S.raf);
-    screen.pause(); $('playbtn').textContent='▶'; }
+    screen.pause(); $('playbtn').textContent='▶'; stopMusicPreview(); }
   $('playbtn').onclick=()=>{ S.playing?stopPlay():startPlay(); };
   function startPlay(){
     if(!S.clips.length) return;
     S.playing=true; $('playbtn').textContent='⏸';
     S.playIdx = S.sel>=0?S.sel:0;
+    startMusicPreview();
     playClip(S.playIdx);
   }
   function playClip(i){
@@ -400,6 +431,7 @@
       if(!S.playing) return;
       const done=S.clips.slice(0,i).reduce((a,x)=>a+(x.out-x.in),0)+(screen.currentTime-c.in);
       $('clock').textContent=fmt(done)+' / '+fmt(totalDur());
+      duckMusic(MUS.gain,MUS.pac,c,screen.currentTime);
       if(screen.currentTime>=c.out-0.03||screen.ended) playClip(i+1);
       else S.raf=requestAnimationFrame(watch);
     };
@@ -432,6 +464,18 @@
     const rec=new MediaRecorder(out, mime?{mimeType:mime}:{});
     const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
     const done=new Promise(res=>{ rec.onstop=res; });
+
+    /* music bed: loops for the whole cut, ducks -12dB under speech */
+    let mgain=null;
+    if(MUS.buf){
+      $('rendertxt').textContent='analyzing speech for music ducking…';
+      for(const c of S.clips){ try{ await speechMapCached(c); }catch(_){} }
+      const msrc=AC.createBufferSource();
+      msrc.buffer=MUS.buf; msrc.loop=true;
+      mgain=AC.createGain(); mgain.gain.value=MUS.vol;
+      msrc.connect(mgain); mgain.connect(dest);
+      msrc.start();
+    }
     rec.start();
 
     const total=totalDur(); let played=0;
@@ -465,6 +509,7 @@
           g.drawImage(v,(W-w)/2,(H-h)/2,w,h);
           paintGlow(g,W,H,v);
           burnClipWords(g,W,H,c,v.currentTime);
+          duckMusic(mgain,AC,c,v.currentTime);
           $('rfill').style.width=((played+(v.currentTime-c.in))/total*100)+'%';
           $('rendertxt').textContent='rendering… '+fmt(played+(v.currentTime-c.in))+' / '+fmt(total);
           requestAnimationFrame(step);
@@ -478,11 +523,17 @@
     document.body.classList.remove('render');
     S.rendering=false;
     const blob=new Blob(chunks,{type:rec.mimeType||'video/webm'});
+    const n=(+localStorage.getItem('cf-expn')||0)+1;
+    localStorage.setItem('cf-expn',n);
+    const shape=aspect==='916'?'9x16':aspect==='11'?'1x1':'orig';
+    const fname='clipfarm-'+n+'-'+shape+'.'+mimeExt(rec.mimeType);
+    if(S.lastExpUrl) URL.revokeObjectURL(S.lastExpUrl);
+    S.lastExpUrl=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='clipfarm-'+Date.now()+'.'+mimeExt(rec.mimeType);
-    a.click();
-    setState('exported — check your downloads');
+    a.href=S.lastExpUrl; a.download=fname; a.click();
+    $('lastexp').innerHTML='last export · '+(blob.size/1048576).toFixed(1)+' MB · '
+      +'<a href="'+S.lastExpUrl+'" download="'+fname+'">download again</a>';
+    setState('exported '+fname+' — check your downloads');
   }
 
   /* ── AUTO-CUT: listen to the clip's audio, keep only the talking ──
@@ -536,7 +587,7 @@
     const c=S.clips[S.sel]; if(!c||S.rendering) return;
     setState('listening for the talking…');
     let m;
-    try{ m=await speechMap(c); }
+    try{ m=await speechMapCached(c); }
     catch(e){ setState('couldn’t read this clip’s audio'); return; }
     const MIN_SEG=0.35, PAD=0.15;
     const regions=speechRegions(m);
@@ -558,6 +609,7 @@
       name:c.name+' · '+(i+1),
       words:c.words, rms:c.rms                    // the transcription rides along
     }));
+    pushUndo();
     S.clips.splice(S.sel,1,...newClips);
     renderRail(); S.clips.forEach(thumb);
     select(Math.min(S.sel,S.clips.length-1));
@@ -577,7 +629,7 @@
     $('shortsbtn').classList.add('busy');
     setState('scouting for short-form moments…');
     let m;
-    try{ m=await speechMap(c); }
+    try{ m=await speechMapCached(c); }
     catch(e){ setState('couldn’t read this clip’s audio');
       $('shortsbtn').classList.remove('busy'); return; }
     const regions=speechRegions(m).filter(([a,b])=>b>c.in&&a<c.out);
@@ -646,6 +698,7 @@
       name:'short '+(k+1)+' · hook '+w.score,
       words:c.words, rms:c.rms
     }));
+    pushUndo();
     S.clips.splice(S.sel,1,...newClips);
     renderRail(); S.clips.forEach(thumb);
     select(Math.min(S.sel,S.clips.length-1));
@@ -1216,6 +1269,7 @@
       name:c.name.replace(/ · \d+$/,'')+' · '+(i+1),
       words:c.words.filter((w,i2)=>keepIdx.has(i2)), rms:c.rms
     }));
+    pushUndo();
     S.clips.splice(S.sel,1,...newClips);
     renderRail(); S.clips.forEach(thumb);
     select(Math.min(S.sel,S.clips.length-1));
@@ -1257,9 +1311,194 @@
     return c.rms;
   }
 
+  /* ── shared speech-map cache: one decode per source file, reused by
+     auto-cut, auto-shorts, auto-edit-all and music ducking ── */
+  const speechMaps=new WeakMap();
+  async function speechMapCached(c){
+    let m=speechMaps.get(c.file);
+    if(!m){ m=await speechMap(c); speechMaps.set(c.file,m); }
+    return m;
+  }
+
+  /* ── UNDO: snapshots of the rail before every destructive action ── */
+  const undoStack=[];
+  function pushUndo(){
+    undoStack.push({ clips:S.clips.map(c=>({...c})), sel:S.sel });
+    if(undoStack.length>25) undoStack.shift();
+  }
+  function undo(){
+    const u=undoStack.pop();
+    if(!u){ setState('nothing to undo'); return; }
+    S.clips=u.clips; S.selSet.clear();
+    if(S.clips.length){
+      document.body.classList.add('has');
+      $('exportbtn').disabled=false;
+      renderRail(); S.clips.forEach(thumb);
+      select(Math.max(0,Math.min(u.sel,S.clips.length-1)));
+    }else{
+      renderRail();
+      document.body.classList.remove('has','trim','script');
+      $('exportbtn').disabled=true; screen.src='';
+    }
+    setState('undone — '+S.clips.length+' clip'+(S.clips.length===1?'':'s')+' on the rail');
+  }
+
+  /* ── delete one or many clips (✕ button, Delete key, multi-select) ── */
+  function delClips(idxs){
+    idxs=[...new Set(idxs)].filter(i=>S.clips[i]);
+    if(!idxs.length) return;
+    pushUndo();
+    idxs.sort((a,b)=>b-a).forEach(i=>S.clips.splice(i,1));
+    S.selSet.clear();
+    S.sel=Math.min(S.sel,S.clips.length-1);
+    renderRail(); S.clips.forEach(thumb);
+    if(!S.clips.length){
+      document.body.classList.remove('has','trim','script');
+      $('exportbtn').disabled=true; screen.src='';
+    }else select(Math.max(0,S.sel));
+    setState(S.clips.length+' clips · total '+fmt(totalDur()));
+  }
+
+  /* ── split the selected clip at the playhead (button or S key) ── */
+  $('splitbtn').onclick=splitAtPlayhead;
+  function splitAtPlayhead(){
+    const c=S.clips[S.sel]; if(!c||S.rendering) return;
+    const t=screen.currentTime;
+    if(!(t>c.in+0.2&&t<c.out-0.2)){ setState('scrub inside the clip first, then split'); return; }
+    pushUndo();
+    const base=c.name.replace(/ · \d+$/,'');
+    S.clips.splice(S.sel,1, {...c, out:t, name:base+' · 1'}, {...c, in:t, name:base+' · 2'});
+    renderRail(); S.clips.forEach(thumb);
+    select(S.sel);
+    setState('split at '+fmt(t));
+  }
+
+  /* ── AUTO-EDIT ALL: silence removal across the whole rail at once, with
+     tight 0.12s padding so cuts land as snappy jump cuts, and punch-in
+     enabled for zoom variety between consecutive cuts ── */
+  $('autoeditbtn').onclick=autoEditAll;
+  async function autoEditAll(){
+    if(S.rendering||!S.clips.length) return;
+    $('autoeditbtn').classList.add('busy');
+    pushUndo();
+    const PAD=0.12, newRail=[];
+    let removed=0, edited=0;
+    for(let ci=0;ci<S.clips.length;ci++){
+      const c=S.clips[ci];
+      setState('auto-editing clip '+(ci+1)+' of '+S.clips.length+'…');
+      let m;
+      try{ m=await speechMapCached(c); }
+      catch(_){ newRail.push(c); continue; }
+      const segs=speechRegions(m)
+        .map(([a,b])=>[Math.max(c.in,a-PAD), Math.min(c.out,b+PAD)])
+        .filter(([a,b])=>b>c.in&&a<c.out&&b-a>=0.3);
+      const merged=[];
+      for(const seg of segs){
+        const last=merged[merged.length-1];
+        if(last&&seg[0]<=last[1]+0.05) last[1]=Math.max(last[1],seg[1]);
+        else merged.push(seg.slice());
+      }
+      if(!merged.length){ newRail.push(c); continue; }   // no speech found — keep as-is
+      const before=c.out-c.in;
+      const after=merged.reduce((a,[x,y])=>a+(y-x),0);
+      removed+=Math.max(0,before-after); edited++;
+      const base=c.name.replace(/ · \d+$/,'');
+      merged.forEach(([a,b],i)=>newRail.push({
+        file:c.file, url:c.url, dur:c.dur, in:a, out:b,
+        name:merged.length>1?base+' · '+(i+1):base,
+        words:c.words, rms:c.rms
+      }));
+    }
+    S.clips=newRail; S.selSet.clear();
+    if(!punch){ punch=true; localStorage.setItem('fx-punch','1'); syncTog(); }
+    renderRail(); S.clips.forEach(thumb);
+    select(0);
+    setState('auto-edit: removed '+fmt(removed)+' of silence across '+edited+' clip'
+      +(edited===1?'':'s')+' — jump cuts tightened, punch-in on');
+    $('autoeditbtn').classList.remove('busy');
+  }
+
+  /* ── MUSIC BED: loops under the cut, ducks -12dB (×0.25) under speech
+     with a ~200ms glide; mixed into preview AND the export graph ── */
+  const MUS={ buf:null, name:'', vol:Math.min(1,(+localStorage.getItem('cf-musicvol')||35)/100),
+              pac:null, src:null, gain:null };
+  $('musicvol').value=Math.round(MUS.vol*100);
+  $('musicbtn').onclick=()=>$('musicfile').click();
+  $('musicfile').onchange=async e=>{
+    const f=e.target.files[0]; e.target.value='';
+    if(!f) return;
+    setState('reading music…');
+    try{
+      const AC=new (window.AudioContext||window.webkitAudioContext)();
+      MUS.buf=await AC.decodeAudioData(await f.arrayBuffer()); AC.close();
+      MUS.name=f.name.replace(/\.\w+$/,'');
+      $('musicbtn').textContent='♫ '+MUS.name.slice(0,14);
+      $('musicbtn').classList.add('on');
+      $('musicoff').style.display='';
+      $('musicvol').style.display='';
+      setState('music loaded — it ducks under speech and rides into the export');
+      if(S.playing) startMusicPreview();
+    }catch(_){ setState('couldn’t read that audio file'); }
+  };
+  $('musicoff').onclick=()=>{
+    stopMusicPreview();
+    MUS.buf=null; MUS.name='';
+    $('musicbtn').textContent='♫ add music'; $('musicbtn').classList.remove('on');
+    $('musicoff').style.display='none'; $('musicvol').style.display='none';
+    setState('music removed');
+  };
+  $('musicvol').oninput=e=>{
+    MUS.vol=e.target.value/100;
+    localStorage.setItem('cf-musicvol',e.target.value);
+    if(MUS.gain&&MUS.pac) MUS.gain.gain.setTargetAtTime(MUS.vol,MUS.pac.currentTime,0.05);
+  };
+  function startMusicPreview(){
+    if(!MUS.buf) return;
+    stopMusicPreview();
+    MUS.pac=MUS.pac||new (window.AudioContext||window.webkitAudioContext)();
+    try{ MUS.pac.resume(); }catch(_){}
+    MUS.src=MUS.pac.createBufferSource();
+    MUS.src.buffer=MUS.buf; MUS.src.loop=true;
+    MUS.gain=MUS.pac.createGain(); MUS.gain.gain.value=MUS.vol;
+    MUS.src.connect(MUS.gain); MUS.gain.connect(MUS.pac.destination);
+    MUS.src.start();
+  }
+  function stopMusicPreview(){
+    if(MUS.src){ try{MUS.src.stop();}catch(_){} MUS.src=null; }
+  }
+  function speakingAt(c,t){
+    const m=c&&speechMaps.get(c.file);
+    if(!m){ if(c&&MUS.buf) speechMapCached(c).catch(()=>{}); return true; }
+    return (m.loud[Math.floor(t/m.step)]||0)>=m.bar;
+  }
+  function duckMusic(gainNode,ctx,c,t){
+    if(!gainNode||!ctx) return;
+    gainNode.gain.setTargetAtTime(MUS.vol*(speakingAt(c,t)?0.25:1), ctx.currentTime, 0.2);
+  }
+
+  /* ── the stage is a drop zone: drag videos straight from Finder ── */
+  const stage=$('stage');
+  stage.addEventListener('dragover',e=>{ e.preventDefault(); stage.classList.add('dropzone'); });
+  stage.addEventListener('dragleave',()=>stage.classList.remove('dropzone'));
+  stage.addEventListener('drop',async e=>{
+    e.preventDefault(); stage.classList.remove('dropzone');
+    const files=[...((e.dataTransfer&&e.dataTransfer.files)||[])].filter(f=>f.type.startsWith('video/'));
+    for(const f of files) await addClip(f);
+    if(files.length) setState(files.length+' clip'+(files.length>1?'s':'')+' dropped in');
+  });
+
   function setState(t){ $('state').textContent=t; }
   document.addEventListener('keydown',e=>{
-    if(e.key===' '&&!S.rendering){ e.preventDefault(); S.playing?stopPlay():startPlay(); }
+    const tag=(e.target&&e.target.tagName)||'';
+    if(/INPUT|SELECT|TEXTAREA/.test(tag)) return;
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); return; }
+    if(S.rendering) return;
+    if(e.key===' '){ e.preventDefault(); S.playing?stopPlay():startPlay(); }
+    else if(e.key==='Delete'||e.key==='Backspace'){
+      e.preventDefault();
+      delClips(S.selSet.size?[...S.selSet]:(S.sel>=0?[S.sel]:[]));
+    }
+    else if(e.key.toLowerCase()==='s'&&!e.metaKey&&!e.ctrlKey){ splitAtPlayhead(); }
   });
 })();
 </script>
