@@ -25,6 +25,10 @@ const GLOW_COLOR: Record<ThemeKey, string> = {
   neon: "#22d3ee",
   violet: "#8b5cf6",
   ember: "#f97316",
+  inferno: "#ef4444",
+  mint: "#10b981",
+  sky: "#3b82f6",
+  rose: "#ec4899",
   aurora: "#67e8f9",
 };
 
