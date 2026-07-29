@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClipFarm Studio</title>
+<style>
+  :root{ --ink:#e5e5e5; --ember:#6366f1; --emberhov:#818cf8; --hot:#ef4444;
+         --dim:#a3a3a3; --dark:#525252;
+         --edge:#262626; --panel:#131722; --line:#1b2130; }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;background:#0B132B;color:var(--ink);
+    font-family:'Inter',-apple-system,'Segoe UI',sans-serif;overflow:hidden;}
+  body{display:flex;flex-direction:column;}
+
+  header{display:flex;align-items:center;gap:12px;padding:14px 22px;flex-wrap:wrap;}
+  #logo{color:var(--dim);font-size:13px;letter-spacing:.18em;text-transform:uppercase;
+    text-decoration:none;}
+  #logo b{font-weight:700;background:linear-gradient(to right,#FFC857,#FF8A65,#7B2CBF);
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  #state{color:var(--dim);font-size:13px;letter-spacing:.1em;text-transform:uppercase;flex:1;
+    text-align:right;white-space:nowrap;overflow:hidden;}
+  .btn{background:none;border:1px solid var(--edge);color:var(--dim);cursor:pointer;
+    border-radius:9px;padding:8px 14px;font-size:13px;font-family:inherit;transition:.15s;
+    letter-spacing:.04em;}
+  .btn:hover{color:var(--ink);border-color:#4a463e;}
+  .btn.primary{background:var(--ember);border-color:var(--ember);color:#fff;font-weight:600;}
+  .btn.primary:hover{background:var(--emberhov);border-color:var(--emberhov);}
+  .btn:disabled{opacity:.35;pointer-events:none;}
+
+  /* preview */
+  #stagewrap{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;
+    padding:0 22px;}
+  #stage{position:relative;max-width:min(880px,92vw);width:100%;aspect-ratio:16/9;
+    background:#0b0e14;border:1px solid var(--edge);border-radius:12px;overflow:hidden;}
+  #screen{width:100%;height:100%;object-fit:contain;background:#000;display:block;}
+  #empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:12px;color:var(--dim);cursor:pointer;}
+  #emptymain{font-size:clamp(18px,2.4vw,26px);color:#8a857b;}
+  #emptysub{font-size:13px;letter-spacing:.12em;text-transform:uppercase;}
+  body.has #empty{display:none;}
+  #renderveil{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    flex-direction:column;gap:14px;background:rgba(0,0,0,.72);}
+  body.render #renderveil{display:flex;}
+  #renderveil .t{color:var(--dim);font-size:13px;letter-spacing:.14em;text-transform:uppercase;}
+  #rbar{width:min(360px,60%);height:4px;background:var(--line);border-radius:2px;overflow:hidden;}
+  #rfill{height:100%;width:0;background:linear-gradient(to right,#FFC857,#FF8A65,#7B2CBF);}
+
+  /* transport */
+  #transport{display:flex;align-items:center;gap:14px;justify-content:center;padding:12px 22px 4px;}
+  #playbtn{width:44px;height:44px;border-radius:50%;border:1px solid var(--edge);
+    background:var(--panel);color:var(--ink);cursor:pointer;font-size:16px;}
+  #playbtn:hover{border-color:var(--ember);color:var(--ember);}
+  #clock{color:var(--dim);font-size:13px;letter-spacing:.08em;min-width:110px;text-align:center;
+    font-variant-numeric:tabular-nums;}
+
+  /* timeline */
+  #rail{padding:12px 22px 20px;}
+  #clips{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;min-height:118px;}
+  .clip{flex:0 0 auto;width:200px;background:var(--panel);border:1px solid var(--edge);
+    border-radius:10px;padding:8px;transition:border-color .15s;}
+  .clip.active{border-color:var(--ember);}
+  .clip .thumbwrap{position:relative;height:64px;border-radius:6px;overflow:hidden;background:#000;}
+  .clip canvas{width:100%;height:100%;object-fit:cover;display:block;}
+  .clip .dur{position:absolute;right:5px;bottom:4px;font-size:11px;color:var(--ink);
+    background:rgba(0,0,0,.65);padding:1px 6px;border-radius:5px;font-variant-numeric:tabular-nums;}
+  .clip .row{display:flex;align-items:center;gap:4px;margin-top:6px;}
+  .clip .name{flex:1;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;}
+  .mini{background:none;border:none;color:var(--dark);cursor:pointer;font-size:13px;padding:2px 4px;}
+  .mini:hover{color:var(--ink);}
+  .mini.del:hover{color:var(--hot);}
+
+  /* trim panel */
+  #trim{display:none;align-items:center;gap:14px;padding:4px 22px 10px;}
+  body.trim #trim{display:flex;}
+  #trim .lab{color:var(--dim);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+    min-width:70px;}
+  #trimtrack{flex:1;position:relative;height:34px;background:var(--panel);
+    border:1px solid var(--edge);border-radius:8px;}
+  #trimsel{position:absolute;top:0;bottom:0;background:rgba(99,102,241,.22);
+    border-left:3px solid var(--ember);border-right:3px solid var(--ember);border-radius:4px;}
+  .grab{position:absolute;top:0;bottom:0;width:16px;cursor:ew-resize;}
+  #grabin{left:-8px;} #grabout{right:-8px;}
+  #trimtimes{color:var(--dim);font-size:12px;min-width:130px;text-align:right;
+    font-variant-numeric:tabular-nums;}
+  input[type=file]{display:none;}
+  .btn.on{color:var(--ember);border-color:var(--ember);}
+  /* glow preview over the player (the real thing is burned in at export) */
+  select{background:var(--panel);border:1px solid var(--edge);color:var(--ink);
+    border-radius:9px;padding:8px 10px;font-size:13px;font-family:inherit;cursor:pointer;}
+  #glowfx{position:absolute;inset:0;pointer-events:none;display:none;}
+  body[data-look="warm"] #glowfx,body[data-look="golden"] #glowfx,
+  body[data-look="teal"] #glowfx,body[data-look="bloom"] #glowfx,
+  body[data-look="noir"] #glowfx{display:block;}
+  body[data-look="warm"] #glowfx{background:radial-gradient(ellipse 75% 70% at 50% 42%,rgba(255,190,120,.10),transparent 55%,rgba(0,0,0,.42) 100%);}
+  body[data-look="warm"] #screen{filter:brightness(1.05) contrast(1.05) saturate(1.07);}
+  body[data-look="golden"] #glowfx{background:radial-gradient(ellipse 80% 75% at 50% 40%,rgba(255,170,80,.18),transparent 60%,rgba(20,5,0,.5) 100%);}
+  body[data-look="golden"] #screen{filter:brightness(1.06) contrast(1.04) saturate(1.15) sepia(.14);}
+  body[data-look="teal"] #glowfx{background:radial-gradient(ellipse 75% 70% at 50% 42%,rgba(255,150,70,.12),transparent 55%,rgba(0,40,55,.45) 100%);}
+  body[data-look="teal"] #screen{filter:contrast(1.09) saturate(1.12);}
+  body[data-look="bloom"] #glowfx{background:radial-gradient(ellipse 90% 85% at 50% 40%,rgba(255,235,215,.14),transparent 65%,rgba(0,0,0,.30) 100%);}
+  body[data-look="bloom"] #screen{filter:brightness(1.07) contrast(.97) saturate(1.05);}
+  body[data-look="noir"] #glowfx{background:radial-gradient(ellipse 70% 65% at 50% 45%,transparent 30%,rgba(0,0,0,.6) 100%);}
+  body[data-look="noir"] #screen{filter:grayscale(.92) contrast(1.18) brightness(1.02);}
+  /* kinetic caption over the preview, mirroring what export burns in */
+  #capfx{position:absolute;left:0;right:0;bottom:9%;text-align:center;pointer-events:none;
+    font-weight:800;font-size:clamp(22px,4.5vw,54px);color:#fde047;
+    letter-spacing:-.02em;will-change:transform;
+    transition:color .3s ease,text-shadow .3s ease;
+    text-shadow:0 0 14px #facc1588,0 0 42px #facc1555,0 0 90px #facc152e;}
+  #autocut.busy,#wordsbtn.busy,#shortsbtn.busy{color:var(--emberhov);border-color:var(--emberhov);pointer-events:none;}
+  /* transcript editor */
+  #script{display:none;margin:0 22px 8px;background:var(--panel);border:1px solid var(--edge);
+    border-radius:10px;padding:10px 14px;}
+  body.script #script{display:block;}
+  #scripthead{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+  #scriptlab{color:var(--dim);font-size:12px;letter-spacing:.1em;text-transform:uppercase;flex:1;}
+  #scriptwords{max-height:96px;overflow-y:auto;line-height:2;font-size:14px;color:var(--ink);}
+  #scriptwords span{cursor:pointer;padding:2px 3px;border-radius:4px;}
+  #scriptwords span:hover{background:#1b2130;}
+  #scriptwords span.hot{background:rgba(99,102,241,.3);}
+  #scriptwords span.struck{color:var(--dark);text-decoration:line-through;
+    text-decoration-color:var(--hot);text-decoration-thickness:2px;}
+  /* recorder overlay */
+  #recui{position:fixed;inset:0;background:#000;z-index:50;display:none;flex-direction:column;}
+  body.reccing #recui{display:flex;}
+  #reccv{flex:1;width:100%;object-fit:contain;min-height:0;}
+  #recbar{display:flex;align-items:center;justify-content:center;gap:18px;padding:18px;}
+  #recdot2{width:10px;height:10px;border-radius:50%;background:var(--hot);
+    box-shadow:0 0 12px var(--hot);animation:pulse 1.4s infinite;visibility:hidden;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  #recui.live #recdot2{visibility:visible;}
+  #recgo{width:70px;height:70px;border-radius:50%;cursor:pointer;border:3px solid #fff;
+    background:rgba(19,23,34,.4);position:relative;}
+  #recgo:after{content:'';position:absolute;inset:7px;border-radius:50%;background:var(--hot);transition:.25s;}
+  #recui.live #recgo:after{inset:20px;border-radius:8px;}
+  #recclose{position:absolute;top:16px;right:20px;}
+  #recmsg{position:absolute;top:20px;left:22px;color:var(--dim);font-size:13px;
+    letter-spacing:.14em;text-transform:uppercase;text-shadow:0 1px 8px #000;}
+</style>
+</head>
+<body>
+
+<header>
+  <a id="logo" href="/"><b>CLIPFARM</b> STUDIO</a>
+  <button class="btn" id="recopen">● record</button>
+  <button class="btn" id="addbtn">+ add clips</button>
+  <select id="capsel" title="caption theme — glows in preview, burned in on export">
+    <option value="gold">✦ gold captions</option>
+    <option value="neon">neon captions</option>
+    <option value="violet">violet captions</option>
+    <option value="ember">ember captions</option>
+    <option value="aurora">aurora drift</option>
+    <option value="off">no captions</option>
+  </select>
+  <button class="btn" id="shakebtn" title="micro-shake as each word lands">∿ shake</button>
+  <button class="btn" id="glowbtn" title="glow halo on every caption word">✺ glow</button>
+  <select id="looksel" title="cinematic look — burned in on export">
+    <option value="none">no look</option>
+    <option value="warm">✦ warm key</option>
+    <option value="golden">golden hour</option>
+    <option value="teal">teal &amp; orange</option>
+    <option value="bloom">soft bloom</option>
+    <option value="noir">noir</option>
+  </select>
+  <select id="aspectsel" title="export shape">
+    <option value="orig">original</option>
+    <option value="916">9:16 vertical</option>
+    <option value="11">1:1 square</option>
+  </select>
+  <button class="btn" id="punchbtn" title="alternate a subtle zoom on every cut — jump-cut energy">⤢ punch-in</button>
+  <button class="btn" id="evenbtn" title="level every clip's loudness on export">≈ even audio</button>
+  <button class="btn primary" id="exportbtn" disabled>export video</button>
+  <div id="state">drop clips in, trim, reorder, export</div>
+</header>
+
+<div id="stagewrap">
+  <div id="stage">
+    <video id="screen" playsinline></video>
+    <div id="capfx"></div>
+    <div id="empty">
+      <div id="emptymain">click to add your clips</div>
+      <div id="emptysub">from your phone, your stream, anywhere</div>
+    </div>
+    <div id="renderveil">
+      <div class="t" id="rendertxt">rendering…</div>
+      <div id="rbar"><div id="rfill"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="transport">
+  <button id="playbtn">▶</button>
+  <div id="clock">0:00 / 0:00</div>
+</div>
+
+<div id="trim">
+  <div class="lab" id="trimlab">trim</div>
+  <div id="trimtrack">
+    <div id="trimsel"><div class="grab" id="grabin"></div><div class="grab" id="grabout"></div></div>
+  </div>
+  <div id="trimtimes">0.0s → 0.0s</div>
+  <button class="btn" id="autocut" title="find the talking, drop the silence">✂ auto-cut silence</button>
+  <button class="btn" id="shortsbtn" title="find the best 15–60s moments and cut them into shorts, scored by hook potential">⚡ auto-shorts</button>
+  <button class="btn" id="wordsbtn" title="AI-transcribe this clip locally in your browser; kinetic words burn in on export">𝑡 add words</button>
+</div>
+
+<div id="script"><div id="scripthead">
+  <span id="scriptlab">transcript — click words to strike them, then</span>
+  <button class="btn" id="wordcutbtn">✂ cut struck words</button>
+</div><div id="scriptwords"></div></div>
+
+<div id="rail"><div id="clips"></div></div>
+
+<div id="recui">
+  <div id="recmsg">press the button and talk — your words land on screen</div>
+  <button class="btn" id="recclose">✕ close</button>
+  <canvas id="reccv"></canvas>
+  <div id="recbar"><div id="recdot2"></div><button id="recgo" title="record / stop"></button></div>
+</div>
+
+<input type="file" id="file" accept="video/*" multiple>
+
+<script>
+(() => {
+  const $=id=>document.getElementById(id);
+  const fmt=s=>{ s=Math.max(0,s); const m=Math.floor(s/60); return m+':'+String(Math.floor(s%60)).padStart(2,'0'); };
+  const S={ clips:[], sel:-1, playing:false, playIdx:0, raf:0, rendering:false };
+  const screen=$('screen');
+
+  /* ── import ── */
+  $('addbtn').onclick=()=>$('file').click();
+  $('empty').onclick=()=>$('file').click();
+  $('file').onchange=async e=>{
+    for(const f of e.target.files) await addClip(f);
+    e.target.value='';
+  };
+  async function addClip(file){
+    const url=URL.createObjectURL(file);
+    const v=document.createElement('video');
+    v.src=url; v.playsInline=true; v.muted=true; v.preload='auto';
+    await new Promise((res,rej)=>{ v.onloadedmetadata=res; v.onerror=rej; }).catch(()=>null);
+    let dur=v.duration;
+    if(!isFinite(dur)){                      // webm from MediaRecorder often lies
+      v.currentTime=1e9;
+      await new Promise(res=>{ v.onseeked=res; setTimeout(res,1500); });
+      dur=v.duration; v.currentTime=0;
+    }
+    if(!isFinite(dur)||dur<=0){ setState('couldn’t read '+file.name); return; }
+    const clip={ file, url, dur, in:0, out:dur, name:file.name.replace(/\.\w+$/,'') };
+    S.clips.push(clip);
+    document.body.classList.add('has');
+    renderRail(); select(S.clips.length-1);
+    thumb(clip);
+    $('exportbtn').disabled=false;
+    setState(S.clips.length+' clip'+(S.clips.length>1?'s':'')+' · total '+fmt(totalDur()));
+  }
+  async function thumb(clip){
+    const v=document.createElement('video');
+    v.src=clip.url; v.muted=true; v.playsInline=true;
+    await new Promise(res=>{ v.onloadedmetadata=res; });
+    v.currentTime=Math.min(clip.in+0.4, clip.dur*0.3);
+    await new Promise(res=>{ v.onseeked=res; setTimeout(res,1200); });
+    const c=clip._thumb; if(!c) return;
+    c.width=200;c.height=64;
+    const g=c.getContext('2d');
+    const r=Math.max(200/v.videoWidth, 64/v.videoHeight);
+    const w=v.videoWidth*r, h=v.videoHeight*r;
+    g.drawImage(v,(200-w)/2,(64-h)/2,w,h);
+  }
+
+  /* ── the rail ── */
+  function renderRail(){
+    const box=$('clips'); box.innerHTML='';
+    S.clips.forEach((c,i)=>{
+      const el=document.createElement('div');
+      el.className='clip'+(i===S.sel?' active':'');
+      el.innerHTML=`
+        <div class="thumbwrap"><canvas></canvas><div class="dur">${fmt(c.out-c.in)}</div></div>
+        <div class="row">
+          <div class="name">${c.name}</div>
+          <button class="mini" title="move left">◂</button>
+          <button class="mini" title="move right">▸</button>
+          <button class="mini del" title="remove">✕</button>
+        </div>`;
+      c._thumb=el.querySelector('canvas');
+      el.querySelector('.thumbwrap').onclick=()=>select(i);
+      const [left,right,del]=el.querySelectorAll('.mini');
+      left.onclick =()=>{ if(i>0){ [S.clips[i-1],S.clips[i]]=[S.clips[i],S.clips[i-1]]; S.sel=i-1; renderRail(); S.clips.forEach(thumb);} };
+      right.onclick=()=>{ if(i<S.clips.length-1){ [S.clips[i+1],S.clips[i]]=[S.clips[i],S.clips[i+1]]; S.sel=i+1; renderRail(); S.clips.forEach(thumb);} };
+      del.onclick  =()=>{ URL.revokeObjectURL(c.url); S.clips.splice(i,1);
+        S.sel=Math.min(S.sel,S.clips.length-1); renderRail(); S.clips.forEach(thumb);
+        if(!S.clips.length){ document.body.classList.remove('has','trim');
+          $('exportbtn').disabled=true; screen.src=''; }
+        setState(S.clips.length+' clips · total '+fmt(totalDur())); };
+      box.appendChild(el);
+    });
+  }
+  function select(i){
+    S.sel=i; renderRail(); S.clips.forEach(thumb);
+    const c=S.clips[i]; if(!c) return;
+    document.body.classList.add('trim');
+    $('trimlab').textContent='trim · '+c.name.slice(0,14);
+    renderScript();
+    stopPlay();
+    screen.src=c.url; screen.currentTime=c.in;
+    drawTrim();
+  }
+
+  /* ── trim handles ── */
+  function drawTrim(){
+    const c=S.clips[S.sel]; if(!c) return;
+    const selEl=$('trimsel');
+    selEl.style.left=(c.in/c.dur*100)+'%';
+    selEl.style.right=(100-c.out/c.dur*100)+'%';
+    $('trimtimes').textContent=c.in.toFixed(1)+'s → '+c.out.toFixed(1)+'s';
+    const railClip=$('clips').children[S.sel];
+    if(railClip) railClip.querySelector('.dur').textContent=fmt(c.out-c.in);
+  }
+  function dragGrab(which,ev){
+    ev.preventDefault();
+    const c=S.clips[S.sel]; if(!c) return;
+    const track=$('trimtrack').getBoundingClientRect();
+    const move=e=>{
+      const x=(e.touches?e.touches[0].clientX:e.clientX);
+      let t=((x-track.left)/track.width)*c.dur;
+      t=Math.max(0,Math.min(c.dur,t));
+      if(which==='in') c.in=Math.min(t,c.out-0.2);
+      else c.out=Math.max(t,c.in+0.2);
+      screen.currentTime=which==='in'?c.in:c.out;
+      drawTrim();
+      setState('total '+fmt(totalDur()));
+    };
+    const up=()=>{ removeEventListener('mousemove',move); removeEventListener('mouseup',up);
+      removeEventListener('touchmove',move); removeEventListener('touchend',up); };
+    addEventListener('mousemove',move); addEventListener('mouseup',up);
+    addEventListener('touchmove',move); addEventListener('touchend',up);
+  }
+  $('grabin').onmousedown=e=>dragGrab('in',e);
+  $('grabout').onmousedown=e=>dragGrab('out',e);
+  $('grabin').ontouchstart=e=>dragGrab('in',e);
+  $('grabout').ontouchstart=e=>dragGrab('out',e);
+
+  /* ── preview the whole cut ── */
+  const totalDur=()=>S.clips.reduce((a,c)=>a+(c.out-c.in),0);
+  function stopPlay(){ S.playing=false; cancelAnimationFrame(S.raf);
+    screen.pause(); $('playbtn').textContent='▶'; }
+  $('playbtn').onclick=()=>{ S.playing?stopPlay():startPlay(); };
+  function startPlay(){
+    if(!S.clips.length) return;
+    S.playing=true; $('playbtn').textContent='⏸';
+    S.playIdx = S.sel>=0?S.sel:0;
+    playClip(S.playIdx);
+  }
+  function playClip(i){
+    if(!S.playing) return;
+    if(i>=S.clips.length){ stopPlay(); return; }
+    const c=S.clips[i];
+    S.playIdx=i; S.sel=i; renderRail(); S.clips.forEach(thumb); drawTrim();
+    screen.src=c.url; screen.muted=false; screen.currentTime=c.in;
+    screen.play();
+    const watch=()=>{
+      if(!S.playing) return;
+      const done=S.clips.slice(0,i).reduce((a,x)=>a+(x.out-x.in),0)+(screen.currentTime-c.in);
+      $('clock').textContent=fmt(done)+' / '+fmt(totalDur());
+      if(screen.currentTime>=c.out-0.03||screen.ended) playClip(i+1);
+      else S.raf=requestAnimationFrame(watch);
+    };
+    S.raf=requestAnimationFrame(watch);
+  }
+
+  /* ── export: play the cut through a canvas, record it ── */
+  $('exportbtn').onclick=exportCut;
+  async function exportCut(){
+    if(S.rendering||!S.clips.length) return;
+    S.rendering=true; stopPlay();
+    document.body.classList.add('render');
+
+    const first=document.createElement('video');
+    first.src=S.clips[0].url; first.muted=true;
+    await new Promise(res=>{ first.onloadedmetadata=res; });
+    let W=first.videoWidth||1280, H=first.videoHeight||720;
+    if(aspect==='916'){ W=1080; H=1920; }
+    else if(aspect==='11'){ W=1080; H=1080; }
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    const g=cv.getContext('2d');
+
+    const AC=new (window.AudioContext||window.webkitAudioContext)();
+    const dest=AC.createMediaStreamDestination();
+    const out=cv.captureStream(30);
+    dest.stream.getAudioTracks().forEach(t=>out.addTrack(t));
+    const mime=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    const rec=new MediaRecorder(out, mime?{mimeType:mime}:{});
+    const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    const done=new Promise(res=>{ rec.onstop=res; });
+    rec.start();
+
+    const total=totalDur(); let played=0;
+    for(const c of S.clips){
+      const v=document.createElement('video');
+      v.src=c.url; v.playsInline=true; v.volume=1;
+      await new Promise(res=>{ v.onloadedmetadata=res; });
+      const node=AC.createMediaElementSource(v);
+      let gain=null;
+      if(evenA){                              // level this clip toward a target loudness
+        const r=await clipRms(c);
+        gain=AC.createGain();
+        gain.gain.value=Math.max(0.5,Math.min(4, 0.055/r));
+        node.connect(gain); gain.connect(dest);
+      } else node.connect(dest);              // audio → the recording, not speakers
+      v.currentTime=c.in;
+      await new Promise(res=>{ v.onseeked=res; setTimeout(res,800); });
+      await v.play();
+      const idx=S.clips.indexOf(c);
+      const zoom=(punch && idx%2===1)?1.07:1.0;   // every other cut punches in
+      const cover=aspect!=='orig';
+      await new Promise(res=>{
+        const step=()=>{
+          if(v.currentTime>=c.out||v.ended){ v.pause(); res(); return; }
+          const fit=cover?Math.max(W/v.videoWidth,H/v.videoHeight)
+                         :Math.min(W/v.videoWidth,H/v.videoHeight);
+          const r=fit*zoom;
+          const w=v.videoWidth*r,h=v.videoHeight*r;
+          g.fillStyle='#000'; g.fillRect(0,0,W,H);
+          g.drawImage(v,(W-w)/2,(H-h)/2,w,h);
+          paintGlow(g,W,H,v);
+          burnClipWords(g,W,H,c,v.currentTime);
+          $('rfill').style.width=((played+(v.currentTime-c.in))/total*100)+'%';
+          $('rendertxt').textContent='rendering… '+fmt(played+(v.currentTime-c.in))+' / '+fmt(total);
+          requestAnimationFrame(step);
+        };
+        step();
+      });
+      played+=c.out-c.in;
+      node.disconnect(); if(gain) gain.disconnect();
+    }
+    rec.stop(); await done; AC.close();
+    document.body.classList.remove('render');
+    S.rendering=false;
+    const blob=new Blob(chunks,{type:rec.mimeType||'video/webm'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='clipfarm-'+Date.now()+'.webm';
+    a.click();
+    setState('exported — check your downloads');
+  }
+
+  /* ── AUTO-CUT: listen to the clip's audio, keep only the talking ──
+     Sound is numbers. We measure loudness in 50ms slices, set the bar at a
+     fraction of the clip's own loud parts (so it adapts to any mic), keep
+     stretches above the bar, bridge tiny dips, and pad each cut so words
+     never get clipped mid-breath. */
+  /* Shared loudness map: RMS in 50ms slices with an adaptive threshold set
+     from this clip's own loud parts, so it works on any mic. */
+  async function speechMap(c){
+    const AC=new (window.AudioContext||window.webkitAudioContext)();
+    const buf=await AC.decodeAudioData(await c.file.arrayBuffer());
+    AC.close();
+    const data=buf.getChannelData(0), sr=buf.sampleRate;
+    const win=Math.floor(sr*0.05), n=Math.floor(data.length/win);
+    const loud=new Float32Array(n);
+    for(let i=0;i<n;i++){
+      let sum=0;
+      for(let j=i*win;j<(i+1)*win;j++) sum+=data[j]*data[j];
+      loud[i]=Math.sqrt(sum/win);
+    }
+    const sorted=[...loud].sort((a,b)=>a-b);
+    const speechLevel=sorted[Math.floor(n*0.85)]||0;   // how loud "talking" is here
+    const bar=Math.max(speechLevel*0.18, 0.006);       // adaptive threshold
+    return { loud, n, step:0.05, bar };
+  }
+  function speechRegions(m, MIN_SIL=0.5, MIN_SEG=0.35){
+    const {loud,n,step,bar}=m;
+    const regions=[]; let start=-1, quiet=0;
+    for(let i=0;i<n;i++){
+      const t=i*step;
+      if(loud[i]>=bar){
+        if(start<0) start=t;
+        quiet=0;
+      }else if(start>=0){
+        quiet+=step;
+        if(quiet>=MIN_SIL){
+          const end=t-quiet;
+          if(end-start>=MIN_SEG) regions.push([start,end]);
+          start=-1; quiet=0;
+        }
+      }
+    }
+    if(start>=0){ const end=n*step-quiet;
+      if(end-start>=MIN_SEG) regions.push([start,end]); }
+    return regions;
+  }
+
+  $('autocut').onclick=autoCut;
+  async function autoCut(){
+    const c=S.clips[S.sel]; if(!c||S.rendering) return;
+    setState('listening for the talking…');
+    let m;
+    try{ m=await speechMap(c); }
+    catch(e){ setState('couldn’t read this clip’s audio'); return; }
+    const MIN_SEG=0.35, PAD=0.15;
+    const regions=speechRegions(m);
+    if(!regions.length){ setState('heard no clear speech — trim by hand'); return; }
+    const segs=regions.map(([a,b])=>[
+      Math.max(c.in, Math.max(0,a-PAD)),
+      Math.min(c.out, Math.min(c.dur,b+PAD))
+    ]).filter(([a,b])=>b-a>=MIN_SEG);
+    // merge overlaps created by padding
+    const merged=[];
+    for(const seg of segs){
+      const last=merged[merged.length-1];
+      if(last && seg[0]<=last[1]+0.05) last[1]=Math.max(last[1],seg[1]);
+      else merged.push(seg);
+    }
+    const kept=merged.reduce((a,[x,y])=>a+(y-x),0);
+    const newClips=merged.map(([a,b],i)=>({
+      file:c.file, url:c.url, dur:c.dur, in:a, out:b,
+      name:c.name+' · '+(i+1),
+      words:c.words, rms:c.rms                    // the transcription rides along
+    }));
+    S.clips.splice(S.sel,1,...newClips);
+    renderRail(); S.clips.forEach(thumb);
+    select(Math.min(S.sel,S.clips.length-1));
+    setState('cut into '+merged.length+' pieces — kept '+fmt(kept)+' of '+fmt(c.out-c.in));
+  }
+
+  /* ── AUTO-SHORTS: find the 15–60s moments worth posting ──
+     Speech regions get chained into candidate windows (gaps under 1.6s stay
+     together, capped at 60s). Each window earns a hook score from speech
+     density (how relentlessly they're talking) and energy above the clip's
+     own loudness bar (how hard they're talking). The top windows replace the
+     clip on the rail, highest score first in the name — flip the aspect to
+     9:16 and export each one. */
+  $('shortsbtn').onclick=autoShorts;
+  async function autoShorts(){
+    const c=S.clips[S.sel]; if(!c||S.rendering) return;
+    $('shortsbtn').classList.add('busy');
+    setState('scouting for short-form moments…');
+    let m;
+    try{ m=await speechMap(c); }
+    catch(e){ setState('couldn’t read this clip’s audio');
+      $('shortsbtn').classList.remove('busy'); return; }
+    const regions=speechRegions(m).filter(([a,b])=>b>c.in&&a<c.out);
+    if(!regions.length){ setState('heard no speech to build shorts from');
+      $('shortsbtn').classList.remove('busy'); return; }
+
+    const MINL=15, MAXL=60, GAP=1.6;
+    const windows=[];
+    let i=0;
+    while(i<regions.length){
+      let s=regions[i][0], e=regions[i][1], j=i;
+      while(j+1<regions.length && regions[j+1][0]-e<=GAP && regions[j+1][1]-s<=MAXL){
+        j++; e=regions[j][1];
+      }
+      windows.push({ s:Math.max(c.in,s-0.2), e:Math.min(c.out,e+0.35) });
+      i=j+1;
+    }
+    const scored=windows.map(w=>{
+      const a0=Math.floor(w.s/m.step), a1=Math.min(m.n,Math.floor(w.e/m.step));
+      let hot=0, sum=0;
+      for(let k=a0;k<a1;k++){ sum+=m.loud[k]; if(m.loud[k]>=m.bar) hot++; }
+      const dur=w.e-w.s;
+      const density=hot/Math.max(1,a1-a0);
+      const energy=Math.min(1, sum/Math.max(1,a1-a0)/(m.bar*5));
+      let score=Math.round(density*70+energy*30);
+      if(dur<MINL) score=Math.round(score*dur/MINL);   // too short gets dinged
+      return { ...w, dur, score:Math.min(99,score) };
+    }).filter(w=>w.dur>=6)
+      .sort((a,b)=>b.score-a.score).slice(0,6)
+      .sort((a,b)=>a.s-b.s);
+    if(!scored.length){
+      setState('nothing long enough for a short — try auto-cut silence instead');
+      $('shortsbtn').classList.remove('busy'); return;
+    }
+    const newClips=scored.map((w,k)=>({
+      file:c.file, url:c.url, dur:c.dur, in:w.s, out:Math.min(w.s+MAXL,w.e),
+      name:'short '+(k+1)+' · hook '+w.score,
+      words:c.words, rms:c.rms
+    }));
+    S.clips.splice(S.sel,1,...newClips);
+    renderRail(); S.clips.forEach(thumb);
+    select(Math.min(S.sel,S.clips.length-1));
+    setState(newClips.length+' shorts cut, hook-scored — set 9:16 and export');
+    $('shortsbtn').classList.remove('busy');
+  }
+
+  /* ── LOOKS: a real grading engine, not one baked filter ──
+     Each look is layered light painted onto the pixels, and it ADAPTS: every
+     few frames the engine reads the video's average brightness from a tiny
+     16×16 downsample and scales the vignette/lift so dark footage isn't
+     crushed and bright footage isn't blown out. Preview shows a CSS
+     approximation; export and the recorder burn the true pass. */
+  let look = localStorage.getItem('cf-look') || 'none';
+  $('looksel').value = look;
+  document.body.dataset.look = look;
+  $('looksel').onchange = e => { look = e.target.value;
+    localStorage.setItem('cf-look', look); document.body.dataset.look = look; };
+
+  const lumaCv=document.createElement('canvas'); lumaCv.width=16; lumaCv.height=16;
+  const lumaCtx=lumaCv.getContext('2d',{willReadFrequently:true});
+  let lumaVal=0.5, lumaTick=0;
+  function readLuma(src,W,H){
+    if((lumaTick++)%10) return;                       // sample every 10th frame
+    try{
+      lumaCtx.drawImage(src,0,0,16,16);
+      const d=lumaCtx.getImageData(0,0,16,16).data;
+      let sum=0;
+      for(let i=0;i<d.length;i+=4) sum+=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)/255;
+      lumaVal=lumaVal*0.7+(sum/256)*0.3;              // eased, no flicker
+    }catch(_){}
+  }
+  const bloomCv=document.createElement('canvas');
+  function paintLook(g,W,H,src){
+    if(look==='none') return;
+    if(src) readLuma(src,W,H);
+    const dark=lumaVal<0.32, bright=lumaVal>0.62;
+    const vig=(a)=>{ const grd=g.createRadialGradient(W/2,H/2,Math.min(W,H)*.42,W/2,H/2,Math.max(W,H)*.72);
+      grd.addColorStop(0,'rgba(0,0,0,0)'); grd.addColorStop(1,'rgba(0,0,0,'+a+')');
+      g.fillStyle=grd; g.fillRect(0,0,W,H); };
+    const key=(r,gc,b,a,yy)=>{ const grd=g.createRadialGradient(W/2,H*(yy||.4),0,W/2,H*(yy||.4),Math.max(W,H)*.55);
+      grd.addColorStop(0,'rgba('+r+','+gc+','+b+','+a+')');
+      grd.addColorStop(.55,'rgba('+r+','+gc+','+b+','+(a*.3)+')');
+      grd.addColorStop(1,'rgba(0,0,0,0)');
+      g.globalCompositeOperation='lighter'; g.fillStyle=grd; g.fillRect(0,0,W,H);
+      g.globalCompositeOperation='source-over'; };
+    if(look==='warm'){
+      key(255,186,110, dark?0.10:0.16);
+      vig(dark?0.26:0.40);
+    }else if(look==='golden'){
+      key(255,168,80, dark?0.14:0.22, 0.38);
+      g.globalCompositeOperation='overlay'; g.fillStyle='rgba(255,140,50,'+(bright?0.10:0.16)+')';
+      g.fillRect(0,0,W,H); g.globalCompositeOperation='source-over';
+      vig(dark?0.30:0.48);
+    }else if(look==='teal'){
+      g.globalCompositeOperation='multiply';         // teal sinks into the shadows
+      g.fillStyle='rgba(120,190,205,'+(dark?0.10:0.16)+')'; g.fillRect(0,0,W,H);
+      g.globalCompositeOperation='source-over';
+      key(255,150,70, dark?0.09:0.14);               // orange lifts the subject
+      g.globalCompositeOperation='overlay'; g.fillStyle='rgba(128,128,128,0.14)';
+      g.fillRect(0,0,W,H); g.globalCompositeOperation='source-over';   // contrast snap
+      vig(0.38);
+    }else if(look==='bloom'){
+      bloomCv.width=W>>2; bloomCv.height=H>>2;       // quarter-res halo = cheap + soft
+      const bg=bloomCv.getContext('2d');
+      bg.filter='blur(6px) brightness(1.25)';
+      bg.drawImage(g.canvas,0,0,bloomCv.width,bloomCv.height);
+      g.globalCompositeOperation='lighter'; g.globalAlpha=bright?0.16:0.26;
+      g.drawImage(bloomCv,0,0,W,H);
+      g.globalAlpha=1; g.globalCompositeOperation='source-over';
+      vig(0.24);
+    }else if(look==='noir'){
+      g.globalCompositeOperation='saturation';        // canvas-native desaturation
+      g.fillStyle='rgb(128,128,128)'; g.globalAlpha=0.92; g.fillRect(0,0,W,H);
+      g.globalAlpha=1;
+      g.globalCompositeOperation='overlay'; g.fillStyle='rgba(110,110,110,0.28)';
+      g.fillRect(0,0,W,H); g.globalCompositeOperation='source-over';
+      vig(dark?0.42:0.58);
+    }
+  }
+  const paintGlow=(g,W,H,src)=>paintLook(g,W,H,src);   // old call sites keep working
+
+  /* ── KINETIC WORD PAINT: the ClipFarm caption — big, bold, glowing ──
+     Five themes (aurora drifts through seven colors every 5 words), the
+     signature glow halo (0 0 14px C88 / 42px C55 / 90px C2e), a 120ms
+     entrance snap (scale .92→1, alpha .15→1), optional micro-shake as each
+     word lands, and emphasized words (long ones, sentence-enders) rendered
+     ~12% larger in pure white. Preview mirrors it; export burns it in. */
+  const CAPT={
+    gold:  {text:'#fde047', glow:'#facc15'},
+    neon:  {text:'#67e8f9', glow:'#22d3ee'},
+    violet:{text:'#c4b5fd', glow:'#8b5cf6'},
+    ember: {text:'#fdba74', glow:'#f97316'},
+  };
+  const AURORA=['#fde047','#6ee7b7','#67e8f9','#93c5fd','#c4b5fd','#f9a8d4','#fdba74'];
+  let capTheme=localStorage.getItem('cf-cap')||'gold';
+  let capShake=localStorage.getItem('cf-shake')!=='0';
+  let capGlow=localStorage.getItem('cf-glow')!=='0';
+  $('capsel').value=capTheme;
+  $('capsel').onchange=e=>{ capTheme=e.target.value; localStorage.setItem('cf-cap',capTheme); };
+  const syncCapBtns=()=>{ $('shakebtn').classList.toggle('on',capShake);
+    $('glowbtn').classList.toggle('on',capGlow); };
+  $('shakebtn').onclick=()=>{ capShake=!capShake; localStorage.setItem('cf-shake',capShake?'1':'0'); syncCapBtns(); };
+  $('glowbtn').onclick=()=>{ capGlow=!capGlow; localStorage.setItem('cf-glow',capGlow?'1':'0'); syncCapBtns(); };
+  syncCapBtns();
+
+  function capColor(idx){
+    if(capTheme==='aurora'){ const c=AURORA[Math.floor(idx/5)%AURORA.length];
+      return {text:c, glow:c}; }
+    return CAPT[capTheme]||CAPT.gold;
+  }
+  const isEmph=w=>/[.!?]$/.test(w)||w.replace(/[^a-zA-Z0-9]/g,'').length>=8;
+  const glowCss=c=>`0 0 14px ${c}88, 0 0 42px ${c}55, 0 0 90px ${c}2e`;
+
+  function paintWord(g,W,H,word,alpha,age=1,idx=0){
+    if(!word||alpha<=0||capTheme==='off') return;
+    const c=capColor(idx), emph=isEmph(word);
+    const k=Math.min(Math.max(age/0.12,0),1);       // 120ms entrance
+    const scale=(0.92+0.08*k)*(emph?1.12:1);
+    const aIn=0.15+0.85*k;
+    let dx=0;
+    if(capShake&&k<1){                              // x keyframes [2,-2,1,0]
+      const ph=[2,-2,1,0], f=k*3, i0=Math.min(2,Math.floor(f));
+      dx=(ph[i0]+(ph[i0+1]-ph[i0])*(f-i0))*(W/720);
+    }
+    const px=Math.round(W*0.075*scale);
+    g.save();
+    g.font='800 '+px+'px Inter,-apple-system,sans-serif';
+    g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
+    g.globalAlpha=alpha*aIn;
+    const x=W/2+dx, y=H*0.82;
+    const fill=emph?'#ffffff':c.text;
+    g.strokeStyle='rgba(0,0,0,.85)'; g.lineWidth=px*.12;   // readability first
+    g.strokeText(word,x,y);
+    if(capGlow){                                    // layered halo = the glow formula
+      const layers=[[px*0.28,'88'],[px*0.85,'55'],[px*1.8,'2e']];
+      for(const [blur,aa] of layers){
+        g.shadowColor=c.glow+aa; g.shadowBlur=blur;
+        g.fillStyle=fill; g.fillText(word,x,y);
+      }
+      g.shadowColor='transparent'; g.shadowBlur=0;
+    }
+    g.fillStyle=fill; g.fillText(word,x,y);
+    g.restore();
+  }
+  const WORD_LIFE=1.4, WORD_FADE=0.35, SYNC=0.35;
+
+  /* ── RECORDER: film yourself inside the editor; spoken words are captured
+     with timestamps live, then burned in 0.35s earlier (when your mouth
+     actually moved) in a second pass; the finished clip drops onto the rail ── */
+  const R={ cam:null, on:false, raw:null, chunks:[], sr:null, srOn:false,
+            word:'', wordAt:0, events:[], t0:0, busy:false };
+  const reccv=$('reccv'), rg=reccv.getContext('2d');
+  const rvid=document.createElement('video'); rvid.muted=true; rvid.playsInline=true;
+
+  $('recopen').onclick=openRec;
+  $('recclose').onclick=closeRec;
+  $('recgo').onclick=()=>R.on?recStop():recStart();
+
+  async function openRec(){
+    document.body.classList.add('reccing');
+    if(!R.cam){
+      try{ R.cam=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}}, audio:true }); }
+      catch(e){ $('recmsg').textContent='camera/mic blocked — allow both, then reopen'; return; }
+      rvid.srcObject=R.cam; await rvid.play();
+      reccv.width=rvid.videoWidth||1280; reccv.height=rvid.videoHeight||720;
+      recLoop();
+    }
+    $('recmsg').textContent='press the button and talk — your words land on screen';
+  }
+  function closeRec(){
+    if(R.on) recStop();
+    document.body.classList.remove('reccing');
+  }
+  function recLoop(){
+    if(rvid.readyState>=2){
+      rg.save(); rg.translate(reccv.width,0); rg.scale(-1,1);
+      rg.drawImage(rvid,0,0,reccv.width,reccv.height); rg.restore();
+      paintGlow(rg,reccv.width,reccv.height,rvid);
+      const age=(performance.now()-R.wordAt)/1000;
+      if(R.word&&age<WORD_LIFE){
+        const a=age<WORD_LIFE-WORD_FADE?1:Math.max(0,1-(age-(WORD_LIFE-WORD_FADE))/WORD_FADE);
+        paintWord(rg,reccv.width,reccv.height,R.word,a,age,R.events.length);
+      }
+    }
+    requestAnimationFrame(recLoop);
+  }
+  const SRAPI=window.SpeechRecognition||window.webkitSpeechRecognition;
+  function srGo(){
+    if(!SRAPI) return;
+    const r=new SRAPI(); r.continuous=true; r.interimResults=true; r.lang='en-US';
+    r.onresult=e=>{
+      const res=e.results[e.results.length-1];
+      const toks=res[0].transcript.trim().split(/\s+/).filter(Boolean);
+      if(toks.length){
+        const w=toks[toks.length-1], now=performance.now();
+        R.word=w; R.wordAt=now;
+        const t=(now-R.t0)/1000, last=R.events[R.events.length-1];
+        if(!last||last.word!==w||t-last.t>.28) R.events.push({t,word:w});
+        else last.t=t;
+      }
+    };
+    r.onend=()=>{ if(R.srOn){ try{r.start();}catch(_){}} };
+    try{ r.start(); }catch(_){}
+    R.sr=r; R.srOn=true;
+  }
+  function srHalt(){ R.srOn=false; if(R.sr){try{R.sr.stop();}catch(_){} R.sr=null;} R.word=''; }
+
+  function recStart(){
+    if(!R.cam||R.busy) return;
+    R.events=[]; R.t0=performance.now(); R.chunks=[];
+    const mime=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    R.raw=new MediaRecorder(R.cam, mime?{mimeType:mime}:{});
+    R.raw.ondataavailable=e=>{ if(e.data.size) R.chunks.push(e.data); };
+    R.raw.onstop=burnAndImport;
+    R.raw.start(); R.on=true; srGo();
+    $('recui').classList.add('live');
+    $('recmsg').textContent='recording — talk';
+  }
+  function recStop(){
+    R.on=false; srHalt();
+    $('recui').classList.remove('live');
+    if(R.raw&&R.raw.state!=='inactive') R.raw.stop();
+  }
+
+  /* pass 2: replay the clean take, burn words (shifted earlier) + glow */
+  async function burnAndImport(){
+    R.busy=true;
+    $('recmsg').textContent='syncing your words to your voice…';
+    const raw=new Blob(R.chunks,{type:R.raw.mimeType||'video/webm'});
+    if(!R.events.length){ finishImport(raw); return; }
+    const clip=document.createElement('video');
+    clip.src=URL.createObjectURL(raw); clip.playsInline=true; clip.volume=0;
+    await new Promise(res=>{ clip.onloadedmetadata=res; });
+    let dur=clip.duration;
+    if(!isFinite(dur)){ clip.currentTime=1e9;
+      await new Promise(res=>{ clip.onseeked=res; setTimeout(res,1500); });
+      dur=clip.duration; clip.currentTime=0; }
+    const W=clip.videoWidth||1280, H=clip.videoHeight||720;
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    const g=cv.getContext('2d');
+    const out=cv.captureStream(30);
+    const cs=clip.captureStream?clip.captureStream():clip.mozCaptureStream();
+    cs.getAudioTracks().forEach(t=>out.addTrack(t));
+    const mime=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    const rec=new MediaRecorder(out, mime?{mimeType:mime}:{});
+    const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    rec.onstop=()=>finishImport(new Blob(chunks,{type:rec.mimeType||'video/webm'}));
+    const timed=R.events.map(e=>({t:Math.max(0,e.t-SYNC),word:e.word}));
+    function frame(){
+      if(clip.ended||clip.currentTime>=dur){ try{rec.stop();}catch(_){} return; }
+      const now=clip.currentTime;
+      let cur=null, curT=0, curI=0;
+      timed.forEach((e,ei)=>{ if(e.t<=now&&now-e.t<WORD_LIFE){ cur=e.word; curT=e.t; curI=ei; } });
+      g.drawImage(clip,0,0,W,H);
+      paintGlow(g,W,H,clip);
+      if(cur){ const age=now-curT;
+        const a=age<WORD_LIFE-WORD_FADE?1:Math.max(0,1-(age-(WORD_LIFE-WORD_FADE))/WORD_FADE);
+        paintWord(g,W,H,cur,a,age,curI); }
+      $('recmsg').textContent='syncing… '+fmt(now)+' / '+fmt(dur);
+      requestAnimationFrame(frame);
+    }
+    rec.start(); await clip.play(); requestAnimationFrame(frame);
+  }
+  async function finishImport(blob){
+    R.busy=false;
+    const f=new File([blob],'take-'+new Date().toTimeString().slice(0,8).replace(/:/g,'')+'.webm',
+      {type:blob.type||'video/webm'});
+    closeRec();
+    await addClip(f);
+    setState('take landed on the rail — trim, auto-cut, or record another');
+  }
+
+  /* ── ADD WORDS: Whisper, a real speech-recognition AI, running ON YOUR
+     MAC inside the browser tab. First use downloads the model (~40 MB,
+     cached forever); after that it's fully local. It hears the clip's audio
+     and returns every word WITH its exact start time — so captions on
+     imported clips are frame-accurate, no sync fudge needed. */
+  let asr=null, asrLoading=false;
+  async function getAsr(){
+    if(asr) return asr;
+    if(asrLoading){ while(!asr) await new Promise(r=>setTimeout(r,300)); return asr; }
+    asrLoading=true;
+    setState('first time: downloading the speech model (~40 MB, one-off)…');
+    const { pipeline, env } =
+      await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/+esm');
+    env.allowLocalModels=false;
+    asr=await pipeline('automatic-speech-recognition','Xenova/whisper-tiny.en');
+    return asr;
+  }
+  async function clipAudio16k(c){
+    const AC=new (window.AudioContext||window.webkitAudioContext)();
+    const buf=await AC.decodeAudioData(await c.file.arrayBuffer());
+    AC.close();
+    const off=new OfflineAudioContext(1, Math.ceil(buf.duration*16000), 16000);
+    const srcN=off.createBufferSource(); srcN.buffer=buf;
+    srcN.connect(off.destination); srcN.start();
+    return (await off.startRendering()).getChannelData(0);
+  }
+  $('wordsbtn').onclick=async()=>{
+    const c=S.clips[S.sel]; if(!c||S.rendering) return;
+    $('wordsbtn').classList.add('busy'); $('wordsbtn').textContent='𝑡 listening…';
+    try{
+      const model=await getAsr();
+      setState('transcribing '+c.name+' on your machine…');
+      const audio=await clipAudio16k(c);
+      const res=await model(audio,{ return_timestamps:'word',
+        chunk_length_s:30, stride_length_s:5 });
+      const words=(res.chunks||[])
+        .filter(w=>w.text&&w.text.trim()&&w.timestamp&&isFinite(w.timestamp[0]))
+        .map(w=>({ t:w.timestamp[0], end:isFinite(w.timestamp[1])?w.timestamp[1]:w.timestamp[0]+0.4,
+                   word:w.text.trim() }));
+      // Whisper splits numbers/prices across tokens ("6","30" for "630");
+      // weld adjacent numeric fragments arriving within .45s of each other.
+      const NUM=/^[\d.,:%$€£-]+$/;
+      const welded=[];
+      for(const w of words){
+        const last=welded[welded.length-1];
+        if(last && NUM.test(last.word) && NUM.test(w.word) && w.t-last.end<0.45){
+          last.word+=w.word; last.end=w.end;
+        } else welded.push({...w});
+      }
+      words.length=0; words.push(...welded);
+      if(!words.length){ setState('heard no words in this clip'); }
+      else{ c.words=words; c.struck=new Set();
+        renderScript();
+        setState(words.length+' words captured — click any word below to strike it'); }
+    }catch(e){
+      console.error(e);
+      setState('transcription failed — check your internet for the one-off model download');
+    }
+    $('wordsbtn').classList.remove('busy'); $('wordsbtn').textContent='𝑡 add words';
+  };
+
+  /* draw a clip's transcribed word — export pass */
+  function burnClipWords(g,W,H,c,t){
+    if(!c.words) return;
+    let cur=null, ci=0;
+    c.words.forEach((w,i)=>{ if(w.t<=t&&t<Math.min(w.end+0.9,w.t+1.4)){ cur=w; ci=i; } });
+    if(!cur) return;
+    const age=t-cur.t, life=Math.min(cur.end+0.9,cur.t+1.4)-cur.t;
+    const a=age<life-0.3?1:Math.max(0,(life-age)/0.3);
+    paintWord(g,W,H,cur.word,a,age,ci);
+  }
+
+  /* live kinetic caption over the preview player, so you see words before export */
+  setInterval(()=>{
+    const c=S.clips[S.sel], cap=$('capfx');
+    if(!c||!c.words||capTheme==='off'){ cap.textContent=''; return; }
+    const t=screen.currentTime;
+    let cur=null, ci=0;
+    c.words.forEach((w,i)=>{ if(w.t<=t&&t<Math.min(w.end+0.9,w.t+1.4)){ cur=w; ci=i; } });
+    if(!cur){ cap.textContent=''; return; }
+    const col=capColor(ci), emph=isEmph(cur.word);
+    const age=t-cur.t, k=Math.min(Math.max(age/0.12,0),1);
+    cap.textContent=cur.word;
+    cap.style.color=emph?'#ffffff':col.text;
+    cap.style.textShadow=capGlow?glowCss(col.glow):'0 0 4px #000, 0 2px 10px rgba(0,0,0,.9)';
+    cap.style.opacity=String(0.15+0.85*k);
+    cap.style.transform='scale('+((0.92+0.08*k)*(emph?1.08:1)).toFixed(3)+')';
+  },80);
+
+  /* ── TRANSCRIPT EDITING: the video obeys the text ──
+     Every word knows its start/end time, so striking a word and cutting it
+     is just subtracting its time-slice from the clip. Click words to strike,
+     ✂ rebuilds the clip as segments that skip them — filler words, flubs,
+     whole sentences: gone from the video itself. */
+  function renderScript(){
+    const c=S.clips[S.sel];
+    if(!c||!c.words){ document.body.classList.remove('script'); return; }
+    document.body.classList.add('script');
+    c.struck=c.struck||new Set();
+    const box=$('scriptwords'); box.innerHTML='';
+    c.words.forEach((w,i)=>{
+      if(w.end<c.in||w.t>c.out) return;             // only words inside the trim
+      const sp=document.createElement('span');
+      sp.textContent=w.word+' ';
+      if(c.struck.has(i)) sp.classList.add('struck');
+      sp.onclick=()=>{ c.struck.has(i)?c.struck.delete(i):c.struck.add(i);
+        sp.classList.toggle('struck'); };
+      sp.dataset.i=i;
+      box.appendChild(sp);
+    });
+  }
+  $('wordcutbtn').onclick=()=>{
+    const c=S.clips[S.sel];
+    if(!c||!c.words||!c.struck||!c.struck.size){ setState('strike some words first'); return; }
+    const PADW=0.06, kept=[]; let cursor=c.in;
+    const cuts=[...c.struck].map(i=>c.words[i])
+      .filter(w=>w.end>c.in&&w.t<c.out)
+      .sort((a,b)=>a.t-b.t)
+      .map(w=>[Math.max(c.in,w.t-PADW), Math.min(c.out,w.end+PADW)]);
+    const mergedCuts=[];
+    for(const cut of cuts){
+      const last=mergedCuts[mergedCuts.length-1];
+      if(last&&cut[0]<=last[1]+0.05) last[1]=Math.max(last[1],cut[1]);
+      else mergedCuts.push(cut);
+    }
+    for(const [a,b] of mergedCuts){
+      if(a-cursor>=0.15) kept.push([cursor,a]);
+      cursor=b;
+    }
+    if(c.out-cursor>=0.15) kept.push([cursor,c.out]);
+    if(!kept.length){ setState('that would delete the whole clip'); return; }
+    const keepIdx=new Set(c.words.map((w,i)=>i).filter(i=>!c.struck.has(i)));
+    const newClips=kept.map(([a,b],i)=>({
+      file:c.file, url:c.url, dur:c.dur, in:a, out:b,
+      name:c.name.replace(/ · \d+$/,'')+' · '+(i+1),
+      words:c.words.filter((w,i2)=>keepIdx.has(i2)), rms:c.rms
+    }));
+    S.clips.splice(S.sel,1,...newClips);
+    renderRail(); S.clips.forEach(thumb);
+    select(Math.min(S.sel,S.clips.length-1));
+    setState(mergedCuts.length+' cut'+(mergedCuts.length>1?'s':'')+' made — the struck words are gone');
+  };
+
+  /* the transcript follows playback: the word being said lights up */
+  setInterval(()=>{
+    const c=S.clips[S.sel];
+    if(!c||!c.words||!document.body.classList.contains('script')) return;
+    const t=screen.currentTime;
+    [...$('scriptwords').children].forEach(sp=>{
+      const w=c.words[+sp.dataset.i];
+      sp.classList.toggle('hot', w && w.t<=t && t<w.end+0.15);
+    });
+  },120);
+
+  /* ── EXPORT SHAPE + PUNCH-IN + EVEN AUDIO ── */
+  let aspect=localStorage.getItem('fx-aspect')||'orig';
+  $('aspectsel').value=aspect;
+  $('aspectsel').onchange=e=>{ aspect=e.target.value; localStorage.setItem('fx-aspect',aspect); };
+  let punch=localStorage.getItem('fx-punch')==='1';
+  let evenA=localStorage.getItem('fx-even')==='1';
+  const syncTog=()=>{ $('punchbtn').classList.toggle('on',punch);
+    $('evenbtn').classList.toggle('on',evenA); };
+  $('punchbtn').onclick=()=>{ punch=!punch; localStorage.setItem('fx-punch',punch?'1':'0'); syncTog(); };
+  $('evenbtn').onclick=()=>{ evenA=!evenA; localStorage.setItem('fx-even',evenA?'1':'0'); syncTog(); };
+  syncTog();
+  async function clipRms(c){
+    if(c.rms) return c.rms;
+    try{
+      const AC=new (window.AudioContext||window.webkitAudioContext)();
+      const buf=await AC.decodeAudioData(await c.file.arrayBuffer()); AC.close();
+      const d=buf.getChannelData(0), s0=Math.floor(c.in*buf.sampleRate),
+            s1=Math.min(d.length,Math.floor(c.out*buf.sampleRate));
+      let sum=0; for(let i=s0;i<s1;i+=4) sum+=d[i]*d[i];
+      c.rms=Math.sqrt(sum/((s1-s0)/4))||0.05;
+    }catch(_){ c.rms=0.05; }
+    return c.rms;
+  }
+
+  function setState(t){ $('state').textContent=t; }
+  document.addEventListener('keydown',e=>{
+    if(e.key===' '&&!S.rendering){ e.preventDefault(); S.playing?stopPlay():startPlay(); }
+  });
+})();
+</script>
+</body>
+</html>
